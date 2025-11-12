@@ -1,0 +1,36 @@
+# Ambientes virtuais
+venv/
+ENV/
+env/
+
+# Configuração e variáveis sensíveis
+.env
+config/settings.env
+*.env
+
+# Dados, transcrições e mídia
+data/
+*.mp4
+*.wav
+*.txt
+
+# Logs e arquivos temporários
+logs/
+*.log
+*.tmp
+
+# Diretório de cache, Python e IDEs
+__pycache__/
+*.pyc
+*.pyo
+.vscode/
+.idea/
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Exemplo para arquivo de variáveis (use .env.example para referência)
+.env.example
+
+# Comentário: arquivos .env e settings.env devem ser usados apenas localmente e nunca enviados ao repositório.
