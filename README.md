@@ -133,10 +133,6 @@ npm test                  # Frontend
 | Frontend | 🚧 Em desenvolvimento |
 | Docker Setup | ✅ Configurado |
 
-## 🤝 Contribuindo
-
-Contribuições são bem-vindas! Por favor, leia o guia de contribuição antes de submeter PRs.
-
 ## 📄 Licença
 
 Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
