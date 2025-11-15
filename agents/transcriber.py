@@ -30,7 +30,7 @@ def download_youtube_video(url, output_path):
 
     # Verifica se o retorno é diferente de 0, que indica erro
     if result.returncode != 0: 
-        print(f"Erro ao baixar vídeo: {str.stderr}")
+        print(f"Erro ao baixar vídeo: {result.stderr}")
         return False 
     
     # Caso o download seja bem sucedido, retorna True
@@ -54,14 +54,14 @@ def trancricao_whisper(video_path, model_size="base"):
     modelo = whisper.load_model(model_size)
 
     # Realiza a transcrição do áudio do vídeo 
-    result = modelo.transcribe(video_path)
+    result = modelo.transcribe(video_path, fp16=False)
 
     # Retorna o resultado da transcrição, em um dicionário incluindo texto, segmentos e idioma 
     return result 
 
 # --------------------------------------------------------------------------------------------------------------------------------------
 
-def transcricao_youtube_video(url, temp_video_path="data/temp_video", model_size="base", output_file_path: str = None): 
+def transcricao_youtube_video(url, temp_video_path="data/temp_video.mp4", model_size="base", output_json_path: str = None): 
     """
     Executa o processo completo: Baixa o vídeo, faz a transcrição e salva o resultado. 
 
@@ -88,37 +88,23 @@ def transcricao_youtube_video(url, temp_video_path="data/temp_video", model_size
     # Transcrever o áudio baixado com o Whisper
     transcript = trancricao_whisper(temp_video_path, model_size)
 
-    # Remover o arquivo de vídeo após a transcrição (libera espaço em disco)
-    try: 
-        if os.path.exists(temp_video_path): 
-            os.remove(temp_video_path)
-            print(f"Arquivo temporário removido: {temp_video_path}")
-    except Exception as e: 
-        print("Erro ao remover arquivo temporário: {e}")
-
     # Caso a transcrição tenha sido feita e um caminho de saída tenha sido fornecido
-    if transcript and output_file_path: 
+    if transcript and output_json_path: 
         try: 
             # Garante que o diretório de saída exista 
-            output_dir = os.path.dirname(output_file_path)
+            output_dir = os.path.dirname(output_json_path)
             if output_dir and not os.path.exists(output_dir):
                 os.makedirs(output_dir)
 
-            # Salva apenas o texto da transcrição
-            with open(output_file_path, "w", encoding="utf-8") as f:
-                f.write(transcript["text"])
-
             # Salva o dicionário completo em formato JSON
-            json_path = output_file_path.replace(".txt", ".json")
-            with open(json_path, "w", encoding="utf-8") as jf:
+            with open(output_json_path, "w", encoding="utf-8") as jf:
                 json.dump(transcript, jf, ensure_ascii=False, indent=4, sort_keys=True)
 
             # Mensagens de sucesso
-            print(f"Transcrição salva em: {output_file_path}")
-            print(f"Dicionário completo salvo em: {json_path}")
+            print(f"Dicionário completo salvo em: {output_json_path}")
         except Exception as e: 
             # Caso ocorra algum erro ao salvar os arquivos 
-            print(f"Erro ao salvar transcrição: {e}")
+            print(f"Erro ao salvar transcrição JSON: {e}")
             return None
     elif not transcript: 
         # Caso a transcrição falhe por qualquer motivo
@@ -134,13 +120,13 @@ if __name__ == "__main__":
     # Exemplo de uso - teste interativo do módulo
     youtube_url = input("Cole a URL do vídeo do YouTube: ")
 
-    output_txt_path = "data/teste.txt"
+    output_json_path = "data/transcricao_final.json"
     
     # Executa o pipeline completo de transcrição
     transcript = transcricao_youtube_video(
             youtube_url,
             model_size="base",
-            output_file_path=output_txt_path
+            output_json_path=output_json_path
         )
     
     if transcript:
