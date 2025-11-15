@@ -1,36 +1,100 @@
-# Ambientes virtuais
+# Python
 venv/
 ENV/
 env/
-
-# Configuração e variáveis sensíveis
-.env
-config/settings.env
-*.env
-
-# Dados, transcrições e mídia
-data/
-*.mp4
-*.wav
-*.txt
-
-# Logs e arquivos temporários
-logs/
-*.log
-*.tmp
-
-# Diretório de cache, Python e IDEs
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Node.js / Frontend
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+frontend/dist/
+frontend/build/
+
+# Environment variables (SENSITIVE)
+.env
+.env.local
+.env.*.local
+config/settings.env
+# Keep .env.example files (templates)
+!.env.example
+!**/.env.example
+
+# Storage (videos, clips, media)
+storage/
+data/
+*.mp4
+*.mp3
+*.wav
+*.avi
+*.mkv
+*.mov
+*.flv
+*.webm
+transcriptions/
+
+# Logs and temporary files
+logs/
+*.log
+*.tmp
+*.temp
+temp/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+migrations/versions/*.py
+!migrations/versions/.gitkeep
+
+# IDEs
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
 
-# Sistema operacional
+# OS
 .DS_Store
 Thumbs.db
+*.bak
+desktop.ini
 
-# Exemplo para arquivo de variáveis (use .env.example para referência)
-.env.example
+# Docker
+.dockerignore
+docker-compose.override.yml
 
-# Comentário: arquivos .env e settings.env devem ser usados apenas localmente e nunca enviados ao repositório.
+# Models (AI models can be large)
+models/*.pt
+models/*.pth
+models/*.ckpt
+*.model
+
+# Thumbnails
+thumbnails/
+
+# Test coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb

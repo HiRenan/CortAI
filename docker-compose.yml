@@ -1,0 +1,126 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: cortai-postgres
+    environment:
+      POSTGRES_USER: cortai
+      POSTGRES_PASSWORD: cortai_password
+      POSTGRES_DB: cortai
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres:/docker-entrypoint-initdb.d
+    networks:
+      - cortai-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cortai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache & Queue
+  redis:
+    image: redis:7-alpine
+    container_name: cortai-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - cortai-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cortai-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./storage:/app/storage
+    environment:
+      - DATABASE_URL=postgresql://cortai:cortai_password@postgres:5432/cortai
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cortai-network
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Celery Worker
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cortai-celery-worker
+    volumes:
+      - ./backend:/app
+      - ./storage:/app/storage
+    environment:
+      - DATABASE_URL=postgresql://cortai:cortai_password@postgres:5432/cortai
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - cortai-network
+    command: celery -A src.core.celery_app worker --loglevel=info
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cortai-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+    networks:
+      - cortai-network
+    command: npm run dev -- --host
+
+  # Nginx (optional - for production)
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: cortai-nginx
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf
+  #     - ./infra/nginx/ssl:/etc/nginx/ssl
+  #   depends_on:
+  #     - backend
+  #     - frontend
+  #   networks:
+  #     - cortai-network
+
+networks:
+  cortai-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
