@@ -1,5 +1,6 @@
 yt-dlp
-openai-whisper
+whisper
 torch>=1.10.0
 python-dotenv==1.0.0
-google-genai
+ffmpeg-python
+

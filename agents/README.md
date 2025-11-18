@@ -1,11 +1,12 @@
-# 📘 CortAI — Agente Transcritor & Agente Analista
+# 📘 CortAI — Agente Transcritor & Agente Analista & Agente Editor
 
-Este repositório contém dois módulos principais do sistema **CortAI**, responsáveis por:
+Este repositório contém três módulos principais do sistema **CortAI**, responsáveis por:
 
 - **Agente Transcritor**: baixa vídeos do YouTube, extrai áudio e gera transcrições automáticas usando IA (Whisper).
 - **Agente Analista**: processa a transcrição, identifica momentos relevantes e gera insights estruturados utilizando o modelo Gemini via Google GenAI SDK.
+- **Agente Editor**: recebe os timestamps do Agente Analista e utiliza o FFmpeg para realizar o corte exato do vídeo, gerando o highlight final.
 
-Esses dois agentes compõem a primeira etapa do pipeline do nosso **Agente de Mídia Inteligente**.
+Esses três agentes compõem a primeira etapa do pipeline do nosso **Agente de Mídia Inteligente**.
 
 ---
 
@@ -14,7 +15,8 @@ Esses dois agentes compõem a primeira etapa do pipeline do nosso **Agente de M�
 ```
 agents/
 ├── transcriber.py      # Baixa o vídeo e gera a transcrição
-└── analyst.py          # Analisa a transcrição e identifica momentos relevantes
+├── analyst.py          # Analisa a transcrição e identifica momentos relevantes
+└── editor.py           # Corta o vídeo com base nos timestamps do analista
 ```
 
 ---
@@ -170,6 +172,36 @@ O script solicitará:
 - Caminho para o arquivo `.json` da transcrição  
 - Número de highlights desejados  
 - Tipo de conteúdo (gameplay, podcast, vlog, entrevista etc.)
+
+---
+
+# ✂️ Agente Editor (FFmpeg)
+
+O Agente Editor é o responsável pela **operação de corte** do vídeo, transformando os dados de análise em um produto final.
+
+Ele recebe o arquivo JSON gerado pelo Agente Analista, que contém os timestamps de início e fim do highlight, e executa o FFmpeg para extrair o trecho exato do vídeo original.
+
+## Funcionalidades
+
+- Leitura dos timestamps de início e fim do highlight a partir de um arquivo JSON.
+- Execução do comando `ffmpeg` para corte eficiente (usando `-c copy` para evitar re-encoding e preservar a qualidade).
+- Geração do arquivo de vídeo final (`highlight.mp4`).
+- Validação de arquivos e timestamps para garantir a integridade do processo.
+
+## Estrutura
+
+```
+agents/
+└── editor.py
+```
+
+## Uso do Agente Editor
+
+```bash
+python agents/editor.py
+```
+
+O script espera que o arquivo JSON de highlight (`data/highlight.json`) e o vídeo original (`data/temp_video.mp4`) estejam nos caminhos padrão para realizar o corte.
 
 ---
 
