@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from src.api.routes import videos
+from src.api.routes import videos, auth
 
 app = FastAPI(
     title="CortAI API",
@@ -18,6 +18,7 @@ app.add_middleware(
 )
 
 # Rotas
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(videos.router, prefix="/api/v1/videos", tags=["videos"])
 
 @app.get("/health")
