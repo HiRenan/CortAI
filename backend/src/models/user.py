@@ -45,7 +45,7 @@ class User(Base):
     videos: Mapped[List["Video"]] = relationship(
         "Video",
         back_populates="user",
-        lazy="selectinload"
+        lazy="select"
     )
 
     def __repr__(self):
