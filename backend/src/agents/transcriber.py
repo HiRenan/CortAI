@@ -132,6 +132,7 @@ def transcricao_youtube_video(url, temp_video_path="data/temp_video.mp4", model_
 if __name__ == "__main__":
     # Exemplo de uso - teste interativo do módulo
     youtube_url = input("Cole a URL do vídeo do YouTube: ")
+    output_json_path = "data/temp/transcricao_final.json"
 
     output_json_path = "data/transcricao_final.json"
 

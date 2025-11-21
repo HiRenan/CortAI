@@ -38,8 +38,8 @@ def node_transcrever(state: CortAIState) -> CortAIState:
     url = state["url"]
 
     # Define os caminhos temporários para os arquivos 
-    video_path = "data/temp_video.mp4"
-    transcription_path = "data/transcricao_temp.json"
+    video_path = "backend/data/temp_video.mp4"
+    transcription_path = "backend/data/transcricao_temp.json"
 
     # Chama o agente transcritor 
     transcription = transcricao_youtube_video(url=url, temp_video_path=video_path, output_json_path=transcription_path)
@@ -49,7 +49,11 @@ def node_transcrever(state: CortAIState) -> CortAIState:
     state["transcription_path"] = transcription_path       # Onde o JSON está 
     state["transcription"] = transcription                # O conteúdo do texto
 
-    print("\n ✔ Transcrição concluída!")
+    if transcription:
+        print("\n ✔ Transcrição concluída!")
+    else:
+        print("\n ❌ Transcrição falhou. Interrompendo o fluxo.")
+        state["error"] = "Falha na transcrição ou download do vídeo."
 
     return state
 
@@ -65,13 +69,13 @@ def node_analisar(state: CortAIState) -> CortAIState:
     transcription_path = state["transcription_path"]
 
     # Chama o agente analista 
-    highlight = executar_agente_analista(transcription_path)
+    highlight = executar_agente_analista(input_json=transcription_path)
 
     # Guarda a decisão da LLM de corte no estado
     state["highlight"] = highlight
 
     # Salva o arquivo para o agente editor ler
-    output_path = "data/highlight.json"
+    output_path = "backend/data/highlight.json"
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(highlight, f, indent=4, ensure_ascii=False)
     print(f"\nArquivo de corte salvo em: {output_path}")
@@ -89,10 +93,14 @@ def node_editar(state: CortAIState) -> CortAIState:
     print("\n -> [3/3] Editando o vídeo...")
 
     # Define onde o vídeo final será salvo 
-    highlight_path = "data/highlight.mp4"
+    highlight_path = "backend/data/highlight.mp4"
 
     # Chama o agente editor 
-    result_path = executar_agente_editor(input_video=state["video_path"], highlight_json="data/highlight.json", output_video=highlight_path)
+    result_path = executar_agente_editor(
+        input_video=state["video_path"], 
+        highlight_json="backend/data/highlight.json", 
+        output_video=highlight_path
+    )
 
     # Atualiza o estado com o caminho do produto final 
     state["highlight_path"] = result_path
@@ -121,16 +129,14 @@ def build_graph():
     workflow.set_entry_point("transcrever")
 
     # Define as arestas (o caminho que a informação percorre)
-    workflow.add_edge("transcrever", "analisar")
+    # Define a lógica de roteamento (condicional)
+    workflow.add_conditional_edges(
+        "transcrever",
+        lambda state: "analisar" if state.get("transcription") else END,
+        {"analisar": "analisar", END: END}
+    )
     workflow.add_edge("analisar", "editar")
     workflow.add_edge("editar", END)
 
     # Compila o grafo 
     return workflow.compile()
-
-
-
-
-
-
-
