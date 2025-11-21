@@ -9,7 +9,8 @@ ffmpeg_path = os.getenv("FFMPEG_PATH")
 
 # --------------------------------------------------------------------------------------------------------------------------------------
 
-def download_youtube_video(url, output_path): 
+
+def download_youtube_video(url, output_path):
     """
     Baixa o vídeo do Youtube utilizando yt-dlp e salva em output_path (formato mp4).
 
@@ -22,23 +23,31 @@ def download_youtube_video(url, output_path):
     """
 
     # Executa o comando yt-dlp para baixar o vídeo em formato mp4
+
+    command = [
+        "yt-dlp",
+        "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4",
+        "-o", output_path,
+        url
+    ]
+
     result = subprocess.run(
-        ["yt-dlp", "-f", "mp4", "-o", output_path, url], # Comando e argumentos 
-        capture_output=True, # Captura a saída 
-        text=True # Interpreta a saída como texto 
+        command,
+        capture_output=True,
+        text=True
     )
 
-    # Verifica se o retorno é diferente de 0, que indica erro
-    if result.returncode != 0: 
-        print(f"Erro ao baixar vídeo: {str.stderr}")
-        return False 
-    
+     # Verifica se o retorno é diferente de 0, que indica erro
+    if result.returncode != 0:
+        print(f"Erro ao baixar vídeo: {result.stderr}")
+        return False
+
     # Caso o download seja bem sucedido, retorna True
-    return True 
+    return True
 
 # --------------------------------------------------------------------------------------------------------------------------------------
 
-def trancricao_whisper(video_path, model_size="base"): 
+def transcricao_whisper(video_path, model_size="base"):
     """
     Transcreve o áudio de um arquivo de vídeo usando o modelo Whisper.
 
@@ -53,15 +62,22 @@ def trancricao_whisper(video_path, model_size="base"):
     # Carrega o modelo Whisper com o tamanho passado como parâmetro
     modelo = whisper.load_model(model_size)
 
-    # Realiza a transcrição do áudio do vídeo 
-    result = modelo.transcribe(video_path)
 
-    # Retorna o resultado da transcrição, em um dicionário incluindo texto, segmentos e idioma 
-    return result 
+    # Realiza a transcrição do áudio do vídeo
+    result = modelo.transcribe(
+        video_path,
+        fp16=False,
+        temperature=0,
+        condition_on_previous_text=False,
+        verbose=False
+    )
+
+    # Retorna o resultado da transcrição, em um dicionário incluindo texto, segmentos e idioma
+    return result
 
 # --------------------------------------------------------------------------------------------------------------------------------------
 
-def transcricao_youtube_video(url, temp_video_path="data/temp_video", model_size="base", output_file_path: str = None): 
+def transcricao_youtube_video(url, temp_video_path="data/temp_video.mp4", model_size="base", output_json_path=None):
     """
     Executa o processo completo: Baixa o vídeo, faz a transcrição e salva o resultado. 
 
@@ -77,48 +93,36 @@ def transcricao_youtube_video(url, temp_video_path="data/temp_video", model_size
 
     # Garante que o diretório para o vídeo temporário exista (cria se não existir)
     temp_dir = os.path.dirname(temp_video_path)
-    if temp_dir and not os.path.exists(temp_dir): 
-        os.makedirs(temp_dir) 
+
+    if temp_dir and not os.path.exists(temp_dir):
+        os.makedirs(temp_dir)
 
     # Baixar o vídeo do Youtube usando yt-dlp
-    if not download_youtube_video(url, temp_video_path): 
+    if not download_youtube_video(url, temp_video_path):
         print("Falha no download!")
-        return None 
+        return None
 
     # Transcrever o áudio baixado com o Whisper
-    transcript = trancricao_whisper(temp_video_path, model_size)
-
-    # Remover o arquivo de vídeo após a transcrição (libera espaço em disco)
-    try: 
-        if os.path.exists(temp_video_path): 
-            os.remove(temp_video_path)
-            print(f"Arquivo temporário removido: {temp_video_path}")
-    except Exception as e: 
-        print("Erro ao remover arquivo temporário: {e}")
+    transcript = transcricao_whisper(temp_video_path, model_size)
 
     # Caso a transcrição tenha sido feita e um caminho de saída tenha sido fornecido
-    if transcript and output_file_path: 
-        try: 
+    if transcript and output_json_path:
+        try:
             # Garante que o diretório de saída exista 
-            output_dir = os.path.dirname(output_file_path)
+            output_dir = os.path.dirname(output_json_path)
             if output_dir and not os.path.exists(output_dir):
                 os.makedirs(output_dir)
 
-            # Salva apenas o texto da transcrição
-            with open(output_file_path, "w", encoding="utf-8") as f:
-                f.write(transcript["text"])
-
             # Salva o dicionário completo em formato JSON
-            json_path = output_file_path.replace(".txt", ".json")
-            with open(json_path, "w", encoding="utf-8") as jf:
-                json.dump(transcript, jf, ensure_ascii=False, indent=4, sort_keys=True)
+            with open(output_json_path, "w", encoding="utf-8") as jf:
+                json.dump(transcript, jf, ensure_ascii=False, indent=4)
 
             # Mensagens de sucesso
-            print(f"Transcrição salva em: {output_file_path}")
-            print(f"Dicionário completo salvo em: {json_path}")
-        except Exception as e: 
+            print(f"Transcrição salva em: {output_json_path}")
+        except Exception as e:
             # Caso ocorra algum erro ao salvar os arquivos 
-            print(f"Erro ao salvar transcrição: {e}")
+            print(f"Erro ao salvar JSON: {e}")
+
             return None
     elif not transcript: 
         # Caso a transcrição falhe por qualquer motivo
@@ -129,23 +133,22 @@ def transcricao_youtube_video(url, temp_video_path="data/temp_video", model_size
     return transcript
 
 # --------------------------------------------------------------------------------------------------------------------------------------
-    
+
+
 if __name__ == "__main__":
     # Exemplo de uso - teste interativo do módulo
     youtube_url = input("Cole a URL do vídeo do YouTube: ")
+    output_json_path = "data/transcricao_final.json"
 
-    output_txt_path = "data/teste.txt"
-    
     # Executa o pipeline completo de transcrição
     transcript = transcricao_youtube_video(
-            youtube_url,
-            model_size="base",
-            output_file_path=output_txt_path
-        )
-    
+        youtube_url,
+        model_size="base",
+        output_json_path=output_json_path
+    )
+
     if transcript:
-        print("Transcrição concluída!\n")
-        print(transcript) 
+        print("\nTranscrição concluída!")
+        print(transcript["text"])
     else:
         print("Falha na transcrição.")
-        
