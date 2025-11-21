@@ -39,6 +39,17 @@ FFMPEG_PATH = os.getenv("FFMPEG_PATH", "ffmpeg")
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
 WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "cpu")
 
+# Database configuration
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql+asyncpg://cortai:cortai_password@postgres:5432/cortai"
+)
+
+# JWT configuration
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-jwt-secret-key-change-in-production")
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+
 # Validate critical environment variables
 if not GOOGLE_API_KEY:
     raise ValueError("ERRO: variável GOOGLE_API_KEY não encontrada no .env!")
