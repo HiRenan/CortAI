@@ -70,6 +70,9 @@ migrations/versions/*.py
 .vscode/
 .idea/
 *.swp
+.cursorrules
+CLAUDE.md 
+.claude/
 *.swo
 *~
 .project

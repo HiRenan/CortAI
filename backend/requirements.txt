@@ -14,14 +14,20 @@ redis==5.0.1
 celery==5.3.4
 
 # AI & ML
+numpy<2.0.0  # IMPORTANT: PyTorch/Whisper requires NumPy 1.x
 openai-whisper==20231117
 torch==2.1.1
 torchvision==0.16.1
 transformers==4.35.2
 pillow==10.1.0
+google-generativeai>=0.3.0
+
+# Agent Orchestration
+langgraph>=0.0.40
+langchain-core>=0.1.0
 
 # Video Processing
-yt-dlp==2023.11.16
+yt-dlp>=2024.4.9
 ffmpeg-python==0.2.0
 moviepy==1.0.3
 

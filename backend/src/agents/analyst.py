@@ -2,7 +2,7 @@ import os # Interage com o Sistema Operacional
 import json # Faz a leitura/escrita em objetos do tipo JSON
 import re # Expressões Regulares
 from dotenv import load_dotenv # Acessa as variáveis de ambiente 
-from google import genai # Acessa o modelo de linguagem do Google (Gemini)
+import google.generativeai as genai # Acessa o modelo de linguagem do Google (Gemini)
 
 # Acessa as variáveis de ambiente e obtem a chave da api do Gemini
 load_dotenv()
@@ -12,8 +12,8 @@ GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
 if not GEMINI_API_KEY:
     raise ValueError("ERRO: variável GOOGLE_API_KEY não encontrada no .env!")
 
-# Faz a inicialização e validação do cliente Gemini
-client = genai.Client(api_key=GEMINI_API_KEY)
+# Configura o cliente Gemini com a API key
+genai.configure(api_key=GEMINI_API_KEY)
 
 # --------------------------------------------------------------------------------------------------------------------------------------
 
@@ -105,7 +105,7 @@ def extrair_timestamp(resposta):
 
 # --------------------------------------------------------------------------------------------------------------------------------------
 
-def executar_agente_analista(input_json="backend/data/transcricao_final.json", output_json="backend/data/highlight.json"):
+def executar_agente_analista(input_json="data/transcricao_final.json", output_json="data/highlight.json"):
     """
     Analisa a transcrição de um vídeo e identifica o momento mais relevante usando LLM.
 
@@ -177,11 +177,11 @@ def executar_agente_analista(input_json="backend/data/transcricao_final.json", o
                 Retorne SOMENTE o intervalo no formato HH:MM:SS - HH:MM:SS. Qualquer texto adicional invalidará a resposta.
             """
 
+    # Cria o modelo Gemini
+    model = genai.GenerativeModel("gemini-2.5-flash")
+
     # Envia o prompt para o modelo Gemini e obtém a resposta
-    resposta = client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=prompt
-    )
+    resposta = model.generate_content(prompt)
 
     # Extrai e limpa o texto da resposta
     texto_resposta = resposta.text.strip()
@@ -211,7 +211,7 @@ def executar_agente_analista(input_json="backend/data/transcricao_final.json", o
 if __name__ == "__main__":
 
     # Executa o agente analista com os parâmetros padrão
-    resultado = executar_agente_analista("backend/data/transcricao_final.json")
+    resultado = executar_agente_analista("data/transcricao_final.json")
 
     # Exibe os resultados para o usuário
     print("")
@@ -222,3 +222,4 @@ if __name__ == "__main__":
     print("\nInício (segundos):", resultado["highlight_inicio_segundos"])
     print("Fim (segundos):", resultado["highlight_fim_segundos"])
     print("-"*50)
+

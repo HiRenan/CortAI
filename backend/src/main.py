@@ -1,37 +1,30 @@
-from graphs.main_graph import build_graph  # Importa a função que constrói o grafo principal do pipeline
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from src.api.routes import videos
 
-def main(): 
-    print("\n🎬 Bem-vindo ao CortAI!\n")  # Mensagem inicial de boas-vindas
-    
-    url_video = input("Insira a URL do Youtube: ").strip()  
-    # Solicita ao usuário a URL do vídeo do YouTube e remove espaços extras
+app = FastAPI(
+    title="CortAI API",
+    description="API para automação de cortes de vídeo com IA Multimodal",
+    version="1.0.0"
+)
 
-    graph = build_graph()  
-    # Constrói o grafo de execução do LangGraph (pipeline completo do sistema)
+# Configuração CORS (Permite que o Frontend acesse a API)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Em produção, especifique a URL do frontend
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    print(f"\nInicializando o CortAI para: {url_video}")  
-    # Informa ao usuário qual URL está sendo processada
+# Rotas
+app.include_router(videos.router, prefix="/api/v1/videos", tags=["videos"])
 
-    result = graph.invoke({"url": url_video})  
-    # Executa o grafo passando o estado inicial contendo a URL do vídeo
-    # O LangGraph retornará um dicionário com o estado final (transcrição, análise, highlight etc.)
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "service": "CortAI Backend"}
 
-    print("\n-------------- EXECUÇÃO FINALIZADA --------------")  
-    # Marca visualmente o fim do pipeline
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("src.main:app", host="0.0.0.0", port=8000, reload=True)
 
-    status_transcricao = "OK" if result.get("transcription") else "ERRO"  
-    # Verifica se o campo "transcription" existe e não está vazio no estado final
-
-    print(f"\nTranscrição: {status_transcricao}")  
-    # Mostra se a etapa de transcrição funcionou
-
-    caminho_final = result.get("highlight_path")  
-    # Obtém o caminho final do vídeo editado gerado pelo pipeline
-
-    print(f"Highlight salvo em: {caminho_final}")  
-    # Exibe onde o arquivo final foi salvo
-
-# --------------------------------------------------------------------------------------------------------------------------------------
-if __name__ == "__main__":  
-    main()  
-    # Se o script for executado diretamente, chama a função principal
