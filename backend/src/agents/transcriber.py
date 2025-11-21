@@ -77,7 +77,7 @@ def transcricao_whisper(video_path, model_size="base"):
 
 # --------------------------------------------------------------------------------------------------------------------------------------
 
-def transcricao_youtube_video(url, temp_video_path="data/temp_video.mp4", model_size="base", output_json_path=None):
+def transcricao_youtube_video(url, temp_video_path="data/temp/temp_video.mp4", model_size="base", output_json_path=None):
     """
     Executa o processo completo: Baixa o vídeo, faz a transcrição e salva o resultado. 
 
@@ -103,7 +103,11 @@ def transcricao_youtube_video(url, temp_video_path="data/temp_video.mp4", model_
         return None
 
     # Transcrever o áudio baixado com o Whisper
-    transcript = transcricao_whisper(temp_video_path, model_size)
+    try:
+        transcript = transcricao_whisper(temp_video_path, model_size)
+    except Exception as e:
+        print(f"Erro durante a transcrição: {e}")
+        return None
 
     # Caso a transcrição tenha sido feita e um caminho de saída tenha sido fornecido
     if transcript and output_json_path:
@@ -134,11 +138,10 @@ def transcricao_youtube_video(url, temp_video_path="data/temp_video.mp4", model_
 
 # --------------------------------------------------------------------------------------------------------------------------------------
 
-
 if __name__ == "__main__":
     # Exemplo de uso - teste interativo do módulo
     youtube_url = input("Cole a URL do vídeo do YouTube: ")
-    output_json_path = "data/transcricao_final.json"
+    output_json_path = "data/temp/transcricao_final.json"
 
     # Executa o pipeline completo de transcrição
     transcript = transcricao_youtube_video(

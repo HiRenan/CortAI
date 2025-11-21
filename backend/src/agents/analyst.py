@@ -105,7 +105,7 @@ def extrair_timestamp(resposta):
 
 # --------------------------------------------------------------------------------------------------------------------------------------
 
-def executar_agente_analista(input_json="data/transcricao_final.json", output_json="data/highlight.json"):
+def executar_agente_analista(input_json="backend/data/transcricao_final.json", output_json="backend/data/highlight.json"):
     """
     Analisa a transcrição de um vídeo e identifica o momento mais relevante usando LLM.
 
@@ -211,7 +211,7 @@ def executar_agente_analista(input_json="data/transcricao_final.json", output_js
 if __name__ == "__main__":
 
     # Executa o agente analista com os parâmetros padrão
-    resultado = executar_agente_analista("data/transcricao_final.json")
+    resultado = executar_agente_analista("backend/data/transcricao_final.json")
 
     # Exibe os resultados para o usuário
     print("")
