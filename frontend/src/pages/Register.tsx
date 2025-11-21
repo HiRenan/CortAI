@@ -4,7 +4,7 @@ import { useAuthStore } from '../store/authStore'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
-import { UserPlus } from 'lucide-react'
+import mascoteImg from '../assets/mascote.png'
 
 export function Register() {
   const navigate = useNavigate()
@@ -100,9 +100,7 @@ export function Register() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center mb-4">
-            <div className="p-3 bg-green-600 rounded-full">
-              <UserPlus className="h-8 w-8 text-white" />
-            </div>
+            <img src={mascoteImg} alt="CortAI Mascote" className="h-20" />
           </div>
           <CardTitle className="text-2xl font-bold">Criar conta</CardTitle>
           <CardDescription>Preencha seus dados para começar</CardDescription>

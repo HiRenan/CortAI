@@ -4,7 +4,7 @@ import { useAuthStore } from '../store/authStore'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
-import { LogIn } from 'lucide-react'
+import logoImg from '../assets/logo.png'
 
 export function Login() {
   const navigate = useNavigate()
@@ -81,9 +81,7 @@ export function Login() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center mb-4">
-            <div className="p-3 bg-blue-600 rounded-full">
-              <LogIn className="h-8 w-8 text-white" />
-            </div>
+            <img src={logoImg} alt="CortAI Logo" className="h-16" />
           </div>
           <CardTitle className="text-2xl font-bold">Bem-vindo de volta</CardTitle>
           <CardDescription>Entre com sua conta para continuar</CardDescription>

@@ -1,7 +1,7 @@
 /**
  * Axios configuration with interceptors for authentication
  */
-import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
+import axios, { AxiosError, type AxiosRequestConfig } from 'axios'
 import type { ApiError } from '../types/api'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -17,10 +17,10 @@ export const api = axios.create({
 
 // Request interceptor: Add auth token to requests
 api.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
+  (config: AxiosRequestConfig) => {
     const token = localStorage.getItem('auth_token')
 
-    if (token) {
+    if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`
     }
 
