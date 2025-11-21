@@ -140,6 +140,7 @@ def transcricao_youtube_video(url: str, temp_video_path: str = "data/temp/temp_v
     """
     Executa o processo completo: Baixa o vídeo, faz a transcrição e salva o resultado.
 
+
     Args: 
         url(str): URL do vídeo no Youtube
         temp_video_path(str): Caminho para salvar o vídeo baixado temporariamente
@@ -208,6 +209,8 @@ if __name__ == "__main__":
     # Exemplo de uso - teste interativo do módulo
     youtube_url = input("Cole a URL do vídeo do YouTube: ")
     output_json_path = "data/temp/transcricao_final.json"
+
+    output_json_path = "data/transcricao_final.json"
 
     # Executa o pipeline completo de transcrição
     transcript = transcricao_youtube_video(

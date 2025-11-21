@@ -4,7 +4,7 @@ import json # Faz a leitura/escrita em objetos do tipo JSON
 
 # --------------------------------------------------------------------------------------------------------------------------------------
 
-def cortar_video_ffmpeg(input_video, inicio, fim, output_video="backend/data/highlight.mp4", remover_original=False):
+def cortar_video_ffmpeg(input_video, inicio, fim, output_video="data/highlight.mp4", remover_original=False):
     """
     Corta um vídeo entre os timestamps especificados usando FFmpeg.
 
@@ -79,7 +79,7 @@ def cortar_video_ffmpeg(input_video, inicio, fim, output_video="backend/data/hig
 
 # --------------------------------------------------------------------------------------------------------------------------------------
 
-def executar_agente_editor(highlight_json="backend/data/highlight.json", input_video="backend/data/temp_video.mp4", output_video="backend/data/highlight.mp4"):
+def executar_agente_editor(highlight_json="data/highlight.json", input_video="data/temp_video.mp4", output_video="data/highlight.mp4"):
     """
     Orquestra o processo completo de edição: lê os timestamps do JSON e corta o vídeo.
 
@@ -141,3 +141,4 @@ if __name__ == "__main__":
     print("")
     print(f"Pipeline de edição concluído: {caminho_highlight}")
     print("-"*50)
+
