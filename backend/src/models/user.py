@@ -2,9 +2,13 @@
 User model for authentication
 """
 from sqlalchemy import String, Boolean, DateTime
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
+from typing import List, TYPE_CHECKING
 from src.database import Base
+
+if TYPE_CHECKING:
+    from src.models.video import Video
 
 
 class User(Base):
@@ -35,6 +39,13 @@ class User(Base):
         DateTime,
         default=datetime.utcnow,
         nullable=False
+    )
+
+    # Relationships
+    videos: Mapped[List["Video"]] = relationship(
+        "Video",
+        back_populates="user",
+        lazy="selectinload"
     )
 
     def __repr__(self):
