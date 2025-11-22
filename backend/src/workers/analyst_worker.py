@@ -3,12 +3,11 @@ Worker responsável pela etapa de análise.
 Consome jobs da fila 'analyse_queue' e publica resultados em 'edit_queue'.
 """
 
-import os # Importa o módulo os
-import json # Importa o módulo json
-import logging # Importa o módulo logging
-from src.services.state_manager import update_job_state, JobStatus # Importa as classes update_job_state e JobStatus
+import os  # Importa o módulo os
+import json  # Importa o módulo json
+import logging  # Importa o módulo logging
 
-# Importa as funções consume, publish, new_job, ANALYSE_QUEUE e EDIT_QUEUE do módulo messaging_rabbit
+from src.services.state_manager import update_job_state, JobStatus  # Atualiza o estado do job
 from src.services.messaging_rabbit import (
     consume,
     publish,
@@ -17,11 +16,14 @@ from src.services.messaging_rabbit import (
     EDIT_QUEUE
 )
 
-# Importa a função executar_agente_analista do módulo analyst
-from src.agents.analyst import executar_agente_analista
+# Importa o novo agente analista baseado em JSON estruturado (Pydantic)
+from src.agents.analyst import AnalystAgent
 
 # Configuração do logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, 
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 log = logging.getLogger("analyst_worker")
 
 # --------------------------------------------------------------------------------------------------------------------------------------
@@ -35,71 +37,100 @@ def handle_analyst(message: dict):
     job_id = message["job_id"]
     payload = message["payload"]
 
-    # Extrai os dados do payload
     transcription_path = payload["transcription_path"]
     video_path = payload["video_path"]
 
-    # Imprime os dados do job
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print(f"[ANALYST] Processando job: {job_id}")
     print(f"Transcrição: {transcription_path}")
-    print("="*60)
+    print("=" * 60)
 
-    # Atualiza o estado do job
-    update_job_state(job_id, JobStatus.PROCESSING, "analyse", {"transcription_path": transcription_path})
+    # Atualiza o estado inicial
+    update_job_state(job_id, JobStatus.PROCESSING, "analyse", {
+        "transcription_path": transcription_path
+    })
 
-    # Cria o diretório para os highlights
+    # Caminho onde o resultado será salvo
     highlight_path = f"/app/data/highlights/{job_id}.json"
-
-    # Garante que o diretório existe
     os.makedirs(os.path.dirname(highlight_path), exist_ok=True)
 
+    # Carrega a transcrição
     try:
-        # Executa o agente analista
-        highlight = executar_agente_analista(
-            input_json=transcription_path,
-            output_json=highlight_path
-        )
+        with open(transcription_path, "r", encoding="utf-8") as f:
+            transcription_json = json.load(f)
     except Exception as e:
-        # Registra o erro
-        log.exception(f"[{job_id}] Erro crítico durante análise: {e}")
-        raise # Releva o erro para o tratamento global
-
-    # Se a análise falhar
-    if highlight is None:
-        print(f"[ERRO] Falha ao analisar a transcrição no job {job_id}.")
-        update_job_state(job_id, JobStatus.FAILED, "analyse_failed") # Atualiza o estado do job
+        msg = f"Erro ao carregar transcrição: {str(e)}"
+        log.exception(msg)
+        update_job_state(job_id, JobStatus.FAILED, "analyse_failed", {"error": msg})
         return
 
-    print(f"[OK] Análise concluída e salva em: {highlight_path}")
+    # Recupera o texto
+    texto = transcription_json.get("text", "").strip()
+    if not texto:
+        msg = "Transcrição vazia ou sem campo 'text'."
+        log.error(msg)
+        update_job_state(job_id, JobStatus.FAILED, "analyse_failed", {"error": msg})
+        return
 
-    # Cria o payload para a próxima etapa
+    # Executa o novo agente analista (LLM com JSON estruturado)
+    agent = AnalystAgent()
+
+    try:
+        highlight_output, error = agent.run(texto)
+    except Exception as e:
+        # Erro crítico inesperado no agente
+        msg = f"Erro crítico ao executar AnalystAgent: {str(e)}"
+        log.exception(msg)
+        update_job_state(job_id, JobStatus.FAILED, "analyse_failed", {"error": msg})
+        return
+
+    # Se o LLM retornou erro validado pelo próprio agente
+    if error:
+        msg = f"Falha na análise: {error}"
+        log.error(msg)
+        update_job_state(job_id, JobStatus.FAILED, "analyse_failed", {"error": msg})
+        return
+
+    # Converte Pydantic → dict
+    highlight_dict = highlight_output.dict()
+
+    # Salva JSON de highlight
+    try:
+        with open(highlight_path, "w", encoding="utf-8") as f:
+            json.dump(highlight_dict, f, indent=4, ensure_ascii=False)
+        print(f"[OK] Análise concluída e salva em: {highlight_path}")
+    except Exception as e:
+        msg = f"Erro ao salvar highlight JSON: {str(e)}"
+        log.exception(msg)
+        update_job_state(job_id, JobStatus.FAILED, "analyse_failed", {"error": msg})
+        return
+
+    # Cria payload para a próxima etapa
     next_payload = {
         "highlight_path": highlight_path,
         "video_path": video_path
     }
 
-    # Cria a mensagem para a próxima etapa
+    # Cria mensagem para o editor
     next_msg = new_job(
         step="edit",
         payload=next_payload,
         job_id=job_id
     )
 
-    # Publica a mensagem na fila
+    # Publica na fila
     publish(EDIT_QUEUE, next_msg)
     print(f"[→] Job {job_id} enviado para edição.\n")
 
-    # Atualiza o estado do job
+    # Atualiza o estado
     update_job_state(job_id, JobStatus.PROCESSING, "edit", next_payload)
 
 # --------------------------------------------------------------------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # Inicia o worker
     print("\n=== WORKER ANALYST INICIADO ===")
     print(f"Escutando fila: {ANALYSE_QUEUE}")
     print("Aguardando jobs...\n")
 
-    # Consume a fila
+    # Inicia o consumidor da fila
     consume(ANALYSE_QUEUE, handle_analyst)
