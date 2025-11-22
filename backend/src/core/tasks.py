@@ -2,7 +2,7 @@
 Celery tasks for video processing
 """
 from .celery_app import celery_app
-from src.core.graph import build_graph
+from src.core.graph import build_graph, cleanup_video_files
 from src.core.progress import update_progress
 from src.database import get_sync_db
 from src.models.video import Video, VideoStatus
@@ -10,10 +10,15 @@ import os
 
 
 @celery_app.task(bind=True)
-def process_video_task(self, url: str, video_id: int):
+def process_video_task(self, url: str, video_id: int, max_highlights: int = 5):
     """
     Celery task that executes the complete LangGraph pipeline.
     Updates video status in database upon completion or failure.
+
+    Args:
+        url: Video URL to process
+        video_id: Database ID of the video
+        max_highlights: Maximum number of highlights to generate (default: 5)
     """
     db_session = None
     try:
@@ -24,16 +29,17 @@ def process_video_task(self, url: str, video_id: int):
             meta={'stage': 'transcribing', 'percentage': 0, 'message': 'Iniciando processamento...'}
         )
 
-        print(f"Iniciando processamento para: {url} (video_id: {video_id})")
+        print(f"Iniciando processamento para: {url} (video_id: {video_id}, max_highlights: {max_highlights})")
 
         # Build and execute graph
         graph = build_graph()
 
-        # Pass video_id and celery task instance to graph state
+        # Pass video_id, celery task instance, and max_highlights to graph state
         result = graph.invoke({
             "url": url,
             "video_id": video_id,
-            "celery_task": self
+            "celery_task": self,
+            "max_highlights": max_highlights
         })
 
         # Check for errors
@@ -64,6 +70,9 @@ def process_video_task(self, url: str, video_id: int):
             print(f"Video {video_id} marked as COMPLETED")
 
         db_session.close()
+
+        # Cleanup temporary files (keeps clips and JSON files for debugging)
+        cleanup_video_files(video_id)
 
         return {
             "status": "completed",

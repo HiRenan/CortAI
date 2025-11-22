@@ -3,27 +3,23 @@ import { Navigate, Outlet } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 
 export function PrivateRoute() {
-  const { isAuthenticated, token, loadUser } = useAuthStore()
+  const { isAuthenticated, token, isLoading, loadUser, logout } = useAuthStore()
 
   useEffect(() => {
-    // If we have a token but no user data, load user
-    if (token && !isAuthenticated) {
+    if (token && !isAuthenticated && !isLoading) {
       loadUser().catch(() => {
-        // If loading user fails, will redirect to login
+        logout()
       })
     }
-  }, [token, isAuthenticated, loadUser])
+  }, [token, isAuthenticated, isLoading, loadUser, logout])
 
-  // If no token, redirect to login
-  if (!token) {
-    return <Navigate to="/login" replace />
-  }
-
-  // If we have token but still loading user, show nothing (could add a loading spinner)
-  if (token && !isAuthenticated) {
+  if (isLoading) {
     return null
   }
 
-  // User is authenticated, render children routes
+  if (!token || !isAuthenticated) {
+    return <Navigate to="/login" replace />
+  }
+
   return <Outlet />
 }

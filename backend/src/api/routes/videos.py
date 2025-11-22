@@ -1,46 +1,57 @@
 """
-Video processing routes with authentication and database persistence
+Video processing routes with authentication and database persistence.
 """
+import logging
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException, Depends, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi.responses import FileResponse
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from celery.result import AsyncResult
 
+from src.api.dependencies.auth import get_current_active_user
+from src.core.celery_app import celery_app
+from src.core.tasks import process_video_task
+from src.core.config import DATA_DIR
 from src.database import get_db
 from src.models.user import User
 from src.models.video import Video, VideoStatus
-from src.schemas.video import VideoCreate, VideoResponse, VideoListResponse, TaskStatusResponse
-from src.api.dependencies.auth import get_current_active_user
-from src.core.tasks import process_video_task
+from src.schemas.video import (
+    TaskStatusResponse,
+    VideoCreate,
+    VideoListResponse,
+    VideoResponse,
+)
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 
 @router.post("/process", response_model=VideoResponse, status_code=status.HTTP_201_CREATED)
 async def process_video(
     request: VideoCreate,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Create a new video processing request and start background task.
     Requires authentication.
     """
-    # Create video record in database
     video = Video(
         user_id=current_user.id,
         url=request.url,
-        status=VideoStatus.PROCESSING
+        status=VideoStatus.PROCESSING,
     )
 
     db.add(video)
     await db.commit()
     await db.refresh(video)
 
-    # Dispatch Celery task with video_id
-    task = process_video_task.delay(request.url, video.id)
+    # Pass max_highlights to task (default: 5)
+    max_highlights = request.max_highlights or 5
+    task = process_video_task.delay(request.url, video.id, max_highlights)
 
-    # Update video with task_id
     video.task_id = task.id
     await db.commit()
     await db.refresh(video)
@@ -51,7 +62,7 @@ async def process_video(
 @router.get("/", response_model=VideoListResponse)
 async def list_videos(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     List all videos for the authenticated user.
@@ -63,34 +74,27 @@ async def list_videos(
     )
     videos = result.scalars().all()
 
-    return {
-        "videos": videos,
-        "total": len(videos)
-    }
+    return {"videos": videos, "total": len(videos)}
 
 
 @router.get("/{video_id}", response_model=VideoResponse)
 async def get_video(
     video_id: int,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
-    Get details of a specific video.
-    Only the video owner can access it.
+    Get details of a specific video. Only the owner can access it.
     """
     result = await db.execute(
-        select(Video).where(
-            Video.id == video_id,
-            Video.user_id == current_user.id
-        )
+        select(Video).where(Video.id == video_id, Video.user_id == current_user.id)
     )
     video = result.scalar_one_or_none()
 
     if not video:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Vídeo não encontrado"
+            detail="Video nao encontrado",
         )
 
     return video
@@ -100,38 +104,55 @@ async def get_video(
 async def get_task_status(
     task_id: str,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Check the status of a video processing task.
+    Uses the configured Celery app so the result backend is available.
     """
-    # Get video by task_id
     result = await db.execute(
-        select(Video).where(
-            Video.task_id == task_id,
-            Video.user_id == current_user.id
-        )
+        select(Video).where(Video.task_id == task_id, Video.user_id == current_user.id)
     )
     video = result.scalar_one_or_none()
 
     if not video:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Task não encontrada ou não pertence ao usuário"
+            detail="Task nao encontrada ou nao pertence ao usuario",
         )
 
-    # Get Celery task status
-    task_result = AsyncResult(task_id)
+    # Default to a DB-derived state if Celery is unreachable or unconfigured
+    status_fallback = {
+        VideoStatus.PROCESSING: "PENDING",
+        VideoStatus.COMPLETED: "SUCCESS",
+        VideoStatus.FAILED: "FAILURE",
+    }
+    task_status = status_fallback.get(video.status, "PENDING")
+    raw_result = None
+
+    try:
+        task_result = AsyncResult(task_id, app=celery_app)
+        task_status = task_result.status
+
+        if task_result.ready():
+            res = task_result.result
+            if isinstance(res, Exception):
+                raw_result = {"error": str(res)}
+            elif isinstance(res, dict):
+                raw_result = res
+            else:
+                raw_result = {"result": str(res)}
+    except Exception as exc:  # pragma: no cover - defensive guardrail for Celery issues
+        log.warning("Could not fetch Celery status for task %s: %s", task_id, exc)
 
     return {
         "task_id": task_id,
-        "status": task_result.status,
+        "status": task_status,
         "video_id": video.id,
-        "result": task_result.result if task_result.ready() else None,
-        # Progress tracking fields from database
+        "result": raw_result,
         "progress_stage": video.progress_stage,
         "progress_percentage": video.progress_percentage,
-        "progress_message": video.progress_message
+        "progress_message": video.progress_message,
     }
 
 
@@ -139,30 +160,79 @@ async def get_task_status(
 async def delete_video(
     video_id: int,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
-    Delete a video and its associated files.
-    Only the video owner can delete it.
+    Delete a video and its associated files. Only the owner can delete it.
     """
-    # Get video
     result = await db.execute(
-        select(Video).where(
-            Video.id == video_id,
-            Video.user_id == current_user.id
-        )
+        select(Video).where(Video.id == video_id, Video.user_id == current_user.id)
     )
     video = result.scalar_one_or_none()
 
     if not video:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Vídeo não encontrado"
+            detail="Video nao encontrado",
         )
 
-    # Delete from database
     await db.delete(video)
     await db.commit()
 
     return None
 
+
+@router.get("/{video_id}/download")
+async def download_video_clip(
+    video_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Download the first clip of a processed video. Only the owner can download it.
+    """
+    result = await db.execute(
+        select(Video).where(Video.id == video_id, Video.user_id == current_user.id)
+    )
+    video = result.scalar_one_or_none()
+
+    if not video:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Video não encontrado",
+        )
+
+    if video.status != VideoStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Video ainda não foi processado ou falhou",
+        )
+
+    if not video.output_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Caminho do clip não encontrado",
+        )
+
+    # Construct the full path to the clip
+    # output_path is like: /data/video_11/clips/clip_01_inicio_0s_duracao_15s.mp4
+    clip_path = Path(video.output_path)
+
+    # Check if file exists
+    if not clip_path.exists():
+        log.error(f"Clip file not found: {clip_path}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Arquivo de clip não encontrado no servidor",
+        )
+
+    # Extract filename for download
+    filename = clip_path.name
+
+    # Return file for download
+    return FileResponse(
+        path=str(clip_path),
+        media_type="video/mp4",
+        filename=filename,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )

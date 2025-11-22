@@ -10,6 +10,7 @@ const URL_REGEX = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be|twitch\.tv|vim
 
 export function Dashboard() {
   const [url, setUrl] = useState('')
+  const [maxHighlights, setMaxHighlights] = useState(5)
   const [urlError, setUrlError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -66,7 +67,7 @@ export function Dashboard() {
     if (!validateUrl(url)) return
 
     setIsSubmitting(true)
-    await addVideo(url)
+    await addVideo(url, maxHighlights)
     setIsSubmitting(false)
     setUrl('')
   }
@@ -135,6 +136,30 @@ export function Dashboard() {
                 <span>{error}</span>
               </div>
             )}
+          </div>
+
+          {/* Max Highlights Selector */}
+          <div className="flex items-center gap-4">
+            <label htmlFor="maxHighlights" className="text-sm font-medium text-gray-700">
+              Número de highlights:
+            </label>
+            <input
+              type="number"
+              id="maxHighlights"
+              min="1"
+              max="20"
+              value={maxHighlights}
+              onChange={(e) => setMaxHighlights(Math.min(20, Math.max(1, parseInt(e.target.value) || 5)))}
+              className="
+                w-20 px-3 py-2 rounded-lg border-2 border-gray-300
+                focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent
+                text-center font-medium
+              "
+              disabled={isSubmitting}
+            />
+            <span className="text-sm text-gray-500">
+              (Recomendado: 3-10 para melhores resultados)
+            </span>
           </div>
 
           <p className="text-xs text-gray-500">

@@ -1,8 +1,8 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
-import type { Video, VideoListResponse } from '../types/api'
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+import { isAxiosError } from 'axios'
+import api from '../lib/axios'
+import type { TaskStatusResponse, Video, VideoListResponse } from '../types/api'
 
 interface VideoStore {
   videos: Video[]
@@ -10,7 +10,7 @@ interface VideoStore {
   error: string | null
 
   fetchVideos: () => Promise<void>
-  addVideo: (url: string) => Promise<void>
+  addVideo: (url: string, maxHighlights?: number) => Promise<void>
   deleteVideo: (id: number) => Promise<void>
   checkStatus: (id: number) => Promise<void>
 }
@@ -26,20 +26,17 @@ export const useVideoStore = create<VideoStore>()(
         set({ isLoading: true, error: null })
 
         try {
-          const token = localStorage.getItem('auth_token')
-          const response = await fetch(`${API_URL}/api/v1/videos/`, {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          })
-
-          if (!response.ok) {
-            throw new Error('Falha ao carregar vídeos')
+          const response = await api.get<VideoListResponse>('/api/v1/videos/')
+          set({ videos: response.data.videos, isLoading: false })
+        } catch (error: unknown) {
+          if (isAxiosError(error) && error.response?.status === 401) {
+            set({
+              error: 'Sessão expirada. Faça login novamente.',
+              isLoading: false,
+            })
+            return
           }
 
-          const data: VideoListResponse = await response.json()
-          set({ videos: data.videos, isLoading: false })
-        } catch (error) {
           console.error('Erro ao carregar vídeos:', error)
           set({
             error: error instanceof Error ? error.message : 'Erro desconhecido',
@@ -48,25 +45,15 @@ export const useVideoStore = create<VideoStore>()(
         }
       },
 
-      addVideo: async (url) => {
+      addVideo: async (url, maxHighlights = 5) => {
         set({ error: null })
 
         try {
-          const token = localStorage.getItem('auth_token')
-          const response = await fetch(`${API_URL}/api/v1/videos/process`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({ url }),
+          const response = await api.post<Video>('/api/v1/videos/process', {
+            url,
+            max_highlights: maxHighlights
           })
-
-          if (!response.ok) {
-            throw new Error('Falha ao iniciar processamento')
-          }
-
-          const newVideo: Video = await response.json()
+          const newVideo = response.data
 
           // Adiciona o novo vídeo no início da lista
           set((state) => ({
@@ -85,17 +72,7 @@ export const useVideoStore = create<VideoStore>()(
         set({ error: null })
 
         try {
-          const token = localStorage.getItem('auth_token')
-          const response = await fetch(`${API_URL}/api/v1/videos/${id}`, {
-            method: 'DELETE',
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          })
-
-          if (!response.ok) {
-            throw new Error('Falha ao deletar vídeo')
-          }
+          await api.delete(`/api/v1/videos/${id}`)
 
           // Remove o vídeo da lista
           set((state) => ({
@@ -116,18 +93,7 @@ export const useVideoStore = create<VideoStore>()(
         }
 
         try {
-          const token = localStorage.getItem('auth_token')
-          const response = await fetch(`${API_URL}/api/v1/videos/status/${video.task_id}`, {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          })
-
-          if (!response.ok) {
-            throw new Error('Falha ao verificar status')
-          }
-
-          const data = await response.json()
+          const { data } = await api.get<TaskStatusResponse>(`/api/v1/videos/status/${video.task_id}`)
 
           // Update video with progress tracking data
           set((state) => ({

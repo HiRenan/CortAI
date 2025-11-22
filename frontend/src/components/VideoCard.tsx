@@ -11,6 +11,47 @@ export function VideoCard({ video, onDelete }: VideoCardProps) {
   const isProcessing = video.status === 'processing'
   const isCompleted = video.status === 'completed'
   const isFailed = video.status === 'failed'
+  const canDelete = Boolean(onDelete)
+  const showDownload = isCompleted
+
+  const handleDownload = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        alert('Você precisa estar autenticado para baixar o clip')
+        return
+      }
+
+      const response = await fetch(`http://localhost:8000/api/v1/videos/${video.id}/download`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error('Erro ao baixar o clip')
+      }
+
+      // Get filename from Content-Disposition header or use default
+      const contentDisposition = response.headers.get('Content-Disposition')
+      const filenameMatch = contentDisposition?.match(/filename="(.+)"/)
+      const filename = filenameMatch ? filenameMatch[1] : `clip_video_${video.id}.mp4`
+
+      // Create blob and download
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (error) {
+      console.error('Erro ao baixar clip:', error)
+      alert('Erro ao baixar o clip. Tente novamente.')
+    }
+  }
 
   // Badge color based on status
   const badgeColors = {
@@ -45,7 +86,7 @@ export function VideoCard({ video, onDelete }: VideoCardProps) {
         )}
 
         {/* Status Badge Overlay */}
-        <div className="absolute top-3 right-3">
+        <div className="absolute top-3 right-3 flex items-center gap-2">
           <span className={`
             inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold
             border backdrop-blur-sm
@@ -55,6 +96,16 @@ export function VideoCard({ video, onDelete }: VideoCardProps) {
             {isCompleted && '✅ Concluído'}
             {isFailed && '❌ Falhou'}
           </span>
+
+          {onDelete && (
+            <button
+              onClick={() => onDelete(video.id)}
+              className="flex items-center justify-center p-2 rounded-full border-2 border-gray-200 text-gray-600 bg-white/80 hover:border-red-500 hover:text-red-600 hover:bg-red-50 transition-all shadow-sm"
+              title="Excluir vídeo"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -100,22 +151,20 @@ export function VideoCard({ video, onDelete }: VideoCardProps) {
           </div>
         )}
 
-        {/* Actions (if completed) */}
-        {isCompleted && (
+        {/* Actions */}
+        {(isCompleted || isProcessing || isFailed) && (showDownload || canDelete) && (
           <div className="flex gap-2 pt-2 border-t border-gray-100">
-            <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all font-medium text-sm shadow-md hover:shadow-lg">
-              <Download className="w-4 h-4" />
-              Baixar Corte
-            </button>
-            {onDelete && (
+            {showDownload && (
               <button
-                onClick={() => onDelete(video.id)}
-                className="px-3 py-2 border-2 border-gray-300 text-gray-700 rounded-lg hover:border-red-500 hover:text-red-600 hover:bg-red-50 transition-all"
-                title="Deletar vídeo"
+                onClick={handleDownload}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all font-medium text-sm shadow-md hover:shadow-lg"
               >
-                <Trash2 className="w-4 h-4" />
+                <Download className="w-4 h-4" />
+                Baixar Corte
               </button>
             )}
+
+            {/* delete button removido da barra inferior; agora apenas no topo */}
           </div>
         )}
 
