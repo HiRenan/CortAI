@@ -25,7 +25,7 @@ export function Sidebar() {
         <Scissors className="h-6 w-6 text-blue-600 mr-2" />
         <span className="text-lg font-bold text-gray-900">CortAI</span>
       </div>
-      <nav className="flex-1 space-y-1 px-3 py-4">
+      <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
         {navigation.map((item) => {
           const isActive = location.pathname === item.href
           return (
