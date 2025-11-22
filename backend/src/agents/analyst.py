@@ -6,7 +6,7 @@ from pydantic import BaseModel, ValidationError  # Validação rigorosa de dados
 from typing import List, Optional
 
 # Função auxiliar para chamadas seguras ao LLM (será criada em utils/safe_api.py)
-from backend.src.utils.safe_api import safe_llm_call
+from src.utils.safe_api import safe_llm_call
 
 
 # CONFIGURAÇÃO DO AMBIENTE E DA API GEMINI
