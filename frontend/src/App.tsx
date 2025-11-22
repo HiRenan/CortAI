@@ -5,6 +5,7 @@ import { Dashboard } from "./pages/Dashboard"
 import { Library } from "./pages/Library"
 import { Login } from "./pages/Login"
 import { Register } from "./pages/Register"
+import { TestProgress } from "./pages/TestProgress"
 
 function App() {
   return (
@@ -13,6 +14,7 @@ function App() {
         {/* Public routes (without sidebar) */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/test-progress" element={<TestProgress />} />
 
         {/* Protected routes (with sidebar) */}
         <Route element={<PrivateRoute />}>
