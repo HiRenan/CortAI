@@ -55,6 +55,20 @@ class Video(Base):
         nullable=False
     )
 
+    # Progress tracking fields
+    progress_stage: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True
+    )
+    progress_percentage: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True
+    )
+    progress_message: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True
+    )
+
     # Relationship to User
     user: Mapped["User"] = relationship("User", back_populates="videos")
 

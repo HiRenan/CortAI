@@ -29,6 +29,7 @@ export interface TokenResponse {
 
 // Video types
 export type VideoStatus = 'processing' | 'completed' | 'failed'
+export type ProgressStage = 'transcribing' | 'analyzing' | 'editing' | null
 
 export interface Video {
   id: number
@@ -39,6 +40,11 @@ export interface Video {
   task_id: string | null
   output_path: string | null
   created_at: string
+
+  // Progress tracking
+  progress_stage: ProgressStage
+  progress_percentage: number | null
+  progress_message: string | null
 }
 
 export interface VideoCreateRequest {
@@ -55,6 +61,11 @@ export interface TaskStatusResponse {
   status: string
   video_id: number | null
   result: Record<string, unknown> | null
+
+  // Progress tracking
+  progress_stage: ProgressStage
+  progress_percentage: number | null
+  progress_message: string | null
 }
 
 // API Error type

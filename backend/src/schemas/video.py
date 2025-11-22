@@ -25,6 +25,11 @@ class VideoResponse(BaseModel):
     output_path: Optional[str] = None
     created_at: datetime
 
+    # Progress tracking fields
+    progress_stage: Optional[str] = None
+    progress_percentage: Optional[int] = None
+    progress_message: Optional[str] = None
+
     class Config:
         from_attributes = True
 
@@ -41,3 +46,8 @@ class TaskStatusResponse(BaseModel):
     status: str
     video_id: Optional[int] = None
     result: Optional[dict] = None
+
+    # Progress tracking fields
+    progress_stage: Optional[str] = None
+    progress_percentage: Optional[int] = None
+    progress_message: Optional[str] = None

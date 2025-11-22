@@ -4,6 +4,9 @@ from src.agents.transcriber import transcricao_youtube_video
 from src.agents.analyst import AnalystAgent  # Novo agente com JSON/Pydantic
 from src.agents.editor import executar_agente_editor
 
+# Importa progress tracking
+from src.core.progress import update_progress
+
 # Importa configurações centralizadas
 from src.core.config import (
     TEMP_VIDEO_PATH,
@@ -24,14 +27,18 @@ import json
 # ----------------------------------------------------------------------
 # Define a classe (dicionário) que representa o estado do grafo
 # total = False, indica que não é necessário preencher todos os campos de uma vez só
-class CortAIState(TypedDict, total=False): 
-    url: str                                   
+class CortAIState(TypedDict, total=False):
+    url: str
     video_path: str
     transcription: Dict[str, Any]
     transcription_path: str
     highlight: Dict[str, Any]
     highlight_path: str
     error: str
+
+    # Progress tracking fields
+    video_id: Optional[int]
+    celery_task: Optional[Any]  # Celery task instance for state updates
 
 
 # Nó 1: Transcrever vídeo
@@ -41,7 +48,27 @@ def node_transcrever(state: CortAIState) -> CortAIState:
     """
     print("\n -> [1/3] Transcrevendo vídeo...\n")
 
+    video_id = state.get("video_id")
+    celery_task = state.get("celery_task")
     url = state["url"]
+
+    # Progress: 5% - Baixando vídeo
+    if video_id:
+        update_progress(video_id, "transcribing", 5, "Baixando vídeo...")
+    if celery_task:
+        celery_task.update_state(
+            state='PROGRESS',
+            meta={'stage': 'transcribing', 'percentage': 5, 'message': 'Baixando vídeo...'}
+        )
+
+    # Progress: 20% - Transcrevendo áudio
+    if video_id:
+        update_progress(video_id, "transcribing", 20, "Transcrevendo áudio...")
+    if celery_task:
+        celery_task.update_state(
+            state='PROGRESS',
+            meta={'stage': 'transcribing', 'percentage': 20, 'message': 'Transcrevendo áudio...'}
+        )
 
     transcription = transcricao_youtube_video(
         url=url,
@@ -52,6 +79,15 @@ def node_transcrever(state: CortAIState) -> CortAIState:
     state["video_path"] = TEMP_VIDEO_PATH
     state["transcription_path"] = TEMP_TRANSCRIPTION_PATH
     state["transcription"] = transcription
+
+    # Progress: 33% - Transcrição concluída
+    if video_id:
+        update_progress(video_id, "transcribing", 33, "Transcrição concluída")
+    if celery_task:
+        celery_task.update_state(
+            state='PROGRESS',
+            meta={'stage': 'transcribing', 'percentage': 33, 'message': 'Transcrição concluída'}
+        )
 
     print("\n ✔ Transcrição concluída!")
     return state
@@ -64,6 +100,18 @@ def node_analisar(state: CortAIState) -> CortAIState:
     Segundo nó: o 'cérebro'. Lê a transcrição e decide o que é importante
     """
     print("\n -> [2/3] Analisando transcrição...")
+
+    video_id = state.get("video_id")
+    celery_task = state.get("celery_task")
+
+    # Progress: 40% - Analisando transcrição
+    if video_id:
+        update_progress(video_id, "analyzing", 40, "Analisando transcrição...")
+    if celery_task:
+        celery_task.update_state(
+            state='PROGRESS',
+            meta={'stage': 'analyzing', 'percentage': 40, 'message': 'Analisando transcrição...'}
+        )
 
     transcription_path = state.get("transcription_path")
     if not transcription_path:
@@ -103,6 +151,15 @@ def node_analisar(state: CortAIState) -> CortAIState:
         state["error"] = f"Erro ao salvar highlight JSON: {str(e)}"
         return state
 
+    # Progress: 66% - Análise concluída
+    if video_id:
+        update_progress(video_id, "analyzing", 66, "Análise concluída")
+    if celery_task:
+        celery_task.update_state(
+            state='PROGRESS',
+            meta={'stage': 'analyzing', 'percentage': 66, 'message': 'Análise concluída'}
+        )
+
     print("\n ✔ Análise concluída!")
     return state
 
@@ -113,6 +170,18 @@ def node_editar(state: CortAIState) -> CortAIState:
     """
     print("\n -> [3/3] Editando o vídeo...")
 
+    video_id = state.get("video_id")
+    celery_task = state.get("celery_task")
+
+    # Progress: 70% - Cortando vídeo
+    if video_id:
+        update_progress(video_id, "editing", 70, "Cortando vídeo...")
+    if celery_task:
+        celery_task.update_state(
+            state='PROGRESS',
+            meta={'stage': 'editing', 'percentage': 70, 'message': 'Cortando vídeo...'}
+        )
+
     try:
         result_path = executar_agente_editor(
             input_video=state["video_path"],
@@ -120,6 +189,16 @@ def node_editar(state: CortAIState) -> CortAIState:
             output_video=TEMP_HIGHLIGHT_VIDEO_PATH
         )
         state["highlight_path"] = result_path
+
+        # Progress: 95% - Finalizando
+        if video_id:
+            update_progress(video_id, "editing", 95, "Finalizando...")
+        if celery_task:
+            celery_task.update_state(
+                state='PROGRESS',
+                meta={'stage': 'editing', 'percentage': 95, 'message': 'Finalizando...'}
+            )
+
         print("\n ✔ Highlight gerado!")
     except Exception as e:
         state["error"] = f"EditorError: {str(e)}"
