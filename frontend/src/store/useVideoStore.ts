@@ -26,7 +26,7 @@ export const useVideoStore = create<VideoStore>()(
         set({ isLoading: true, error: null })
 
         try {
-          const token = localStorage.getItem('token')
+          const token = localStorage.getItem('auth_token')
           const response = await fetch(`${API_URL}/api/v1/videos/`, {
             headers: {
               'Authorization': `Bearer ${token}`
@@ -52,7 +52,7 @@ export const useVideoStore = create<VideoStore>()(
         set({ error: null })
 
         try {
-          const token = localStorage.getItem('token')
+          const token = localStorage.getItem('auth_token')
           const response = await fetch(`${API_URL}/api/v1/videos/process`, {
             method: 'POST',
             headers: {
@@ -85,7 +85,7 @@ export const useVideoStore = create<VideoStore>()(
         set({ error: null })
 
         try {
-          const token = localStorage.getItem('token')
+          const token = localStorage.getItem('auth_token')
           const response = await fetch(`${API_URL}/api/v1/videos/${id}`, {
             method: 'DELETE',
             headers: {
@@ -116,7 +116,7 @@ export const useVideoStore = create<VideoStore>()(
         }
 
         try {
-          const token = localStorage.getItem('token')
+          const token = localStorage.getItem('auth_token')
           const response = await fetch(`${API_URL}/api/v1/videos/status/${video.task_id}`, {
             headers: {
               'Authorization': `Bearer ${token}`
