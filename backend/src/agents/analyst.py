@@ -1,225 +1,181 @@
-import os # Interage com o Sistema Operacional
-import json # Faz a leitura/escrita em objetos do tipo JSON
-import re # Expressões Regulares
-from dotenv import load_dotenv # Acessa as variáveis de ambiente 
-import google.generativeai as genai # Acessa o modelo de linguagem do Google (Gemini)
+import os  # Interage com o sistema operacional
+import json  # Leitura/escrita de JSON
+from dotenv import load_dotenv  # Carrega variáveis de ambiente do arquivo .env
+import google.generativeai as genai  # Cliente oficial para acessar os modelos Gemini
+from pydantic import BaseModel, ValidationError  # Validação rigorosa de dados estruturados
+from typing import List, Optional
 
-# Acessa as variáveis de ambiente e obtem a chave da api do Gemini
+# Função auxiliar para chamadas seguras ao LLM (será criada em utils/safe_api.py)
+from backend.src.utils.safe_api import safe_llm_call
+
+
+# CONFIGURAÇÃO DO AMBIENTE E DA API GEMINI
+
+# Carrega as variáveis do arquivo .env
 load_dotenv()
+
+# Obtém a API key do Gemini
 GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-# Caso a chave não seja encontrada, retorna a mensagem de erro
+# Caso a chave não exista, lança erro imediatamente
 if not GEMINI_API_KEY:
-    raise ValueError("ERRO: variável GOOGLE_API_KEY não encontrada no .env!")
+    raise ValueError("ERRO: variável GOOGLE_API_KEY não encontrada no arquivo .env!")
 
-# Configura o cliente Gemini com a API key
+# Configura o cliente Gemini com a API key obtida
 genai.configure(api_key=GEMINI_API_KEY)
 
-# --------------------------------------------------------------------------------------------------------------------------------------
 
-def normalizar_timestamp(ts):
+# DEFINIÇÃO DO MODELO DA RESPOSTA (PYDANTIC)
+
+class Highlight(BaseModel):
     """
-    Normaliza timestamps para o formato padrão HH:MM:SS.
+    Estrutura de um único highlight gerado pelo modelo.
 
-    Args:
-        ts(str) - Timestamp no formato HH:MM:SS ou MM:SS
+    Attributes:
+        start (float): Tempo inicial em segundos.
+        end (float): Tempo final em segundos.
+        summary (Optional[str]): Descrição opcional do trecho.
+        score (Optional[float]): Relevância opcional atribuída pelo modelo.
+    """
+    start: float
+    end: float
+    summary: Optional[str] = None
+    score: Optional[float] = None
 
-    Returns:
-        str - Timestamp normalizado no formato HH:MM:SS
+
+class AnalystOutput(BaseModel):
+    """
+    Estrutura completa da saída do agente analista.
+
+    Attributes:
+        highlights (List[Highlight]): Lista de todos os trechos importantes identificados.
+    """
+    highlights: List[Highlight]
+
+
+# JSON Schema que será enviado ao Gemini para garantir saída 100% estruturada
+JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "highlights": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "start": {"type": "number"},
+                    "end": {"type": "number"},
+                    "summary": {"type": "string"},
+                    "score": {"type": "number"},
+                },
+                "required": ["start", "end"]
+            }
+        }
+    },
+    "required": ["highlights"]
+}
+
+
+# CLASSE PRINCIPAL DO AGENTE ANALISTA
+
+class AnalystAgent:
+    """
+    Agente responsável por analisar uma transcrição e identificar automaticamente
+    o(s) trecho(s) mais relevante(s) do vídeo.
+
+    Esta versão substitui completamente:
+    - Regex
+    - Parsing textual frágil
+    - Timestamp HH:MM:SS
+    - Conversão manual de tempo
+
+    Agora:
+    - O Gemini retorna **apenas JSON**
+    - A estrutura é validada pelo **Pydantic**
+    - O LangGraph recebe dados limpos, validados e prontos para uso
+
+    Além disso:
+    - Toda chamada ao LLM é protegida com try/except via `safe_llm_call`
     """
 
-    # Divide a string do timestamp usando ':' como delimitador
-    # Exemplo: "05:30" → ["05", "30"] ou "1:23:45" → ["1", "23", "45"]
-    partes = ts.split(":")
-    
-    # Se o timestamp tem apenas 2 partes (formato MM:SS), adiciona "00" no início para representar as horas
-    # Exemplo: ["05", "30"] → ["00", "05", "30"]
-    if len(partes) == 2:
-        partes = ["00"] + partes
+    def __init__(self, model_name="gemini-2.5-flash"):
+        """
+        Inicializa o modelo Gemini com um schema JSON obrigatório.
 
-    # Converte cada parte para inteiro usando map() e desempacota nas variáveis h, m, s
-    # Exemplo: ["00", "05", "30"] → h=0, m=5, s=30
-    h, m, s = map(int, partes)
+        Args:
+            model_name (str): Nome do modelo Gemini a ser utilizado.
+        """
 
-    # Formata cada componente com 2 dígitos e junta com ':'
-    # Exemplo: 0, 5, 30 → "00:05:30"
-    return f"{h:02d}:{m:02d}:{s:02d}"
+        # Criamos o modelo com um schema que obriga JSON válido,
+        # evitando respostas em formato textual solto.
+        self.model = genai.GenerativeModel(
+            model_name,
+            generation_config={
+                "temperature": 0.3,               # Garante consistência
+                "max_output_tokens": 2048,        # Tamanho máximo da saída
+                "response_mime_type": "application/json",  # Obriga resposta JSON
+                "response_schema": JSON_SCHEMA,   # Obriga estrutura definida acima
+            }
+        )
 
-# --------------------------------------------------------------------------------------------------------------------------------------
+    # ==============================================================================================================
+    def run(self, transcript: str):
+        """
+        Executa o agente analista para identificar highlights dentro da transcrição.
 
-def converter_timestamp(timestamp):
-    """
-    Converte timestamp no formato HH:MM:SS para segundos totais.
+        Args:
+            transcript (str): Texto completo da transcrição.
 
-    Args:
-        timestamp(str) - Timestamp no formato HH:MM:SS
+        Returns:
+            tuple:
+                - (AnalystOutput | None): Saída validada pelo Pydantic, se bem-sucedida.
+                - (str | None): Mensagem de erro, caso ocorra falha.
 
-    Returns:
-        int - Total de segundos representado pelo timestamp
-    """
-    # Divide o timestamp e converte cada componente para segundos
-    horas, minutos, segundos = timestamp.split(":")
+        A função nunca lança exceções — sempre retorna um erro seguro,
+        permitindo integração estável com o LangGraph.
+        """
 
-    # Retorna o total de tempo em segundos somado
-    return int(horas) * 3600 + int(minutos) * 60 + int(segundos)
+        # Prompt especializado enviado ao LLM
+        prompt = f"""
+Você é um especialista em análise de vídeos e precisa produzir uma saída
+**TOTALMENTE ESTRUTURADA em JSON** contendo os melhores highlights do vídeo.
 
-# --------------------------------------------------------------------------------------------------------------------------------------
+REGRAS IMPORTANTES:
+- Retorne apenas JSON válido (nenhum texto fora do objeto JSON).
+- Cada highlight deve conter:
+    - start: tempo inicial em segundos (float/int)
+    - end: tempo final em segundos (float/int)
+    - summary: resumo opcional
+    - score: pontuação opcional
+- Nunca escreva texto solto, explicações ou comentários.
+- Sempre garanta que start < end.
 
-def extrair_timestamp(resposta):
-    """
-    Extrai intervalos de timestamp da resposta do modelo Gemini.
+TRANSCRIÇÃO PARA ANÁLISE:
+{transcript}
+"""
 
-    Args:
-        resposta(str) - Texto retornado pelo modelo contendo timestamps
+        # CHAMADA SEGURA AO LLM (com try/except interno)
 
-    Returns:
-        tuple - Tupla contendo (inicio_segundos, fim_segundos) ou (None, None) em caso de erro
-    """
+        llm_response, error = safe_llm_call(self.model, prompt)
 
-    # Padrão regex que busca por dois timestamps separados por hífen/traço
-    padrao = r"(\d{1,2}:\d{1,2}:\d{1,2}|\d{1,2}:\d{1,2})\s*[-–]\s*(\d{1,2}:\d{1,2}:\d{1,2}|\d{1,2}:\d{1,2})"
-    
-    # Busca por todos os intervalos de tempo encontrados na resposta
-    intervalos_encontrados = re.findall(padrao, resposta)
+        # Se ocorrer qualquer erro (timeout, erro de API, etc.), retornamos para o LangGraph como mensagem segura
+        if error:
+            return None, f"GeminiError: {error}"
 
-    # Retorna None se nenhum timestamp for encontrado
-    if not intervalos_encontrados:
-        return None, None
+        # PARSE DO JSON RETORNADO
 
-    # Usa o primeiro par de timestamps encontrado na resposta
-    inicio_raw, fim_raw = intervalos_encontrados[0]
+        try:
+            data = json.loads(llm_response)
 
-    # Normaliza os timestamps para formato padrão
-    inicio_norm = normalizar_timestamp(inicio_raw)
-    fim_norm = normalizar_timestamp(fim_raw)
+        except Exception as e:
+            # JSON inválido ou malformado
+            return None, f"JSONDecodeError: {str(e)}"
 
-    # Converte para segundos totais
-    inicio_seg = converter_timestamp(inicio_norm)
-    fim_seg = converter_timestamp(fim_norm)
+        # VALIDAÇÃO E TIPAGEM COM PYDANTIC
 
-    # Garantir que início < fim (intervalo válido)
-    if inicio_seg >= fim_seg:
-        return None, None
+        try:
+            parsed = AnalystOutput(**data)
+            return parsed, None  # Sucesso
 
-    return inicio_seg, fim_seg
-
-# --------------------------------------------------------------------------------------------------------------------------------------
-
-def executar_agente_analista(input_json="data/transcricao_final.json", output_json="data/highlight.json"):
-    """
-    Analisa a transcrição de um vídeo e identifica o momento mais relevante usando LLM.
-
-    Args:
-        input_json(str) - Caminho para o arquivo JSON com a transcrição
-        output_json (str) - Caminho para salvar o resultado com os highlights
-
-    Returns:
-        dict - Dicionário contendo os timestamps do highlight e resposta bruta do modelo
-
-    Raises:
-        FileNotFoundError - Se o arquivo de transcrição não for encontrado
-        ValueError - Se a transcrição estiver vazia ou não contiver timestamps válidos
-    """
-    
-    # Verifica se o arquivo de transcrição existe
-    if not os.path.exists(input_json):
-        raise FileNotFoundError(f"ERRO: arquivo {input_json} não encontrado!")
-
-    # Carrega o arquivo JSON com a transcrição
-    with open(input_json, "r", encoding="utf-8") as f:
-        dados_transcricao = json.load(f)
-
-    # Extrai o texto da transcrição do dicionário
-    texto_transcricao = dados_transcricao.get("text", "").strip()
-
-    # Valida se a transcrição não está vazia
-    if not texto_transcricao:
-        raise ValueError("ERRO: O JSON de transcrição não contém campo 'text'!")
-
-
-    prompt = f"""
-                Você é um especialista em análise de conteúdo de vídeo com expertise em identificar momentos-chave e highlights impactantes. 
-                Sua missão é analisar transcrições e localizar o trecho mais relevante do conteúdo.
-
-                Analise a transcrição abaixo e identifique o ÚNICO intervalo temporal mais importante, impactante ou relevante do vídeo.
-
-                # CRITÉRIOS DE SELEÇÃO (em ordem de prioridade):
-                1. **Trecho mais compartilhável** - parte que teria maior engajamento em redes sociais
-                2. **Momento de maior impacto emocional** - pico de emoção, revelação surpreendente ou conclusão poderosa
-                3. **Clímax narrativo** - ápice da história, resolução de conflito ou momento decisivo
-                4. **Ponto crucial informativo** - informação mais valiosa, insight principal ou aprendizado central
-                5. **Resumo natural** - segmento que melhor representa a essência do conteúdo completo
-
-                Você DEVE retornar EXCLUSIVAMENTE no formato: HH:MM:SS - HH:MM:SS
-
-                # REGRAS ESTRITAS:
-                - NUNCA inclua explicações, justificativas ou textos adicionais
-                - NÃO adicione prefixos como "Resposta:" ou "Timestamp:"
-                - NÃO use marcadores, listas ou formatação complexa
-                - USE APENAS o formato HH:MM:SS - HH:MM:SS
-                - GARANTA que o início seja sempre menor que o fim
-                - CONSIDERE intervalos entre 30 segundos e 3 minutos (a menos que o contexto exija diferente)
-
-                # EXEMPLOS VÁLIDOS DE RESPOSTA:
-                00:05:30 - 00:07:45
-                01:15:00 - 01:17:30
-                00:00:00 - 00:02:15
-
-                # EXEMPLOS INVÁLIDOS (NÃO FAÇA):
-                "O momento mais importante é 00:05:30 - 00:07:45 porque..."
-                00:05:30 - 00:07:45
-                Timestamp: 00:05:30-00:07:45
-
-                # TRANSCRIÇÃO PARA ANÁLISE:
-                {texto_transcricao}
-
-                # LEMBRETE FINAL:
-                Retorne SOMENTE o intervalo no formato HH:MM:SS - HH:MM:SS. Qualquer texto adicional invalidará a resposta.
-            """
-
-    # Cria o modelo Gemini
-    model = genai.GenerativeModel("gemini-2.5-flash")
-
-    # Envia o prompt para o modelo Gemini e obtém a resposta
-    resposta = model.generate_content(prompt)
-
-    # Extrai e limpa o texto da resposta
-    texto_resposta = resposta.text.strip()
-
-    # Processa a resposta para extrair os timestamps
-    inicio, fim = extrair_timestamp(texto_resposta)
-
-    # Valida se os timestamps foram extraídos com sucesso
-    if inicio is None or fim is None:
-        raise ValueError(f"ERRO: Não foi possível extrair timestamp da resposta: {texto_resposta}")
-
-    # Salvar resultado
-    resultado = {
-        "resposta_bruta": texto_resposta,
-        "highlight_inicio_segundos": inicio,
-        "highlight_fim_segundos": fim
-    }
-
-    # Salva os resultados em arquivo JSON
-    with open(output_json, "w", encoding="utf-8") as f:
-        json.dump(resultado, f, ensure_ascii=False, indent=4)
-
-    return resultado
-
-# --------------------------------------------------------------------------------------------------------------------------------------
-
-if __name__ == "__main__":
-
-    # Executa o agente analista com os parâmetros padrão
-    resultado = executar_agente_analista("data/transcricao_final.json")
-
-    # Exibe os resultados para o usuário
-    print("")
-    print("-"*50)
-    print("Resposta do modelo:")
-    print(resultado["resposta_bruta"])
-
-    print("\nInício (segundos):", resultado["highlight_inicio_segundos"])
-    print("Fim (segundos):", resultado["highlight_fim_segundos"])
-    print("-"*50)
-
+        except ValidationError as e:
+            # Gemini retornou JSON válido mas com campos errados
+            return None, f"PydanticValidationError: {str(e)}"
