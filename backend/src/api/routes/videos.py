@@ -134,3 +134,35 @@ async def get_task_status(
         "progress_message": video.progress_message
     }
 
+
+@router.delete("/{video_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_video(
+    video_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Delete a video and its associated files.
+    Only the video owner can delete it.
+    """
+    # Get video
+    result = await db.execute(
+        select(Video).where(
+            Video.id == video_id,
+            Video.user_id == current_user.id
+        )
+    )
+    video = result.scalar_one_or_none()
+
+    if not video:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vídeo não encontrado"
+        )
+
+    # Delete from database
+    await db.delete(video)
+    await db.commit()
+
+    return None
+
