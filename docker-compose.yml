@@ -71,7 +71,7 @@ services:
       - ./storage:/app/storage
       - ./backend/data:/app/data
     environment:
-      - DATABASE_URL=postgresql://cortai:cortai_password@postgres:5432/cortai
+      - DATABASE_URL=postgresql+asyncpg://cortai:cortai_password@postgres:5432/cortai
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
       - RABBITMQ_URL=amqp://cortai:cortai_password@rabbitmq:5672/
@@ -99,7 +99,7 @@ services:
       - ./storage:/app/storage
       - ./backend/data:/app/data
     environment:
-      - DATABASE_URL=postgresql://cortai:cortai_password@postgres:5432/cortai
+      - DATABASE_URL=postgresql+asyncpg://cortai:cortai_password@postgres:5432/cortai
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
       - RABBITMQ_URL=amqp://cortai:cortai_password@rabbitmq:5672/

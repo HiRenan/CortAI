@@ -1,42 +1,132 @@
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from src.core.tasks import process_video_task
+"""
+Video processing routes with authentication and database persistence
+"""
+from fastapi import APIRouter, HTTPException, Depends, status
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from celery.result import AsyncResult
+
+from src.database import get_db
+from src.models.user import User
+from src.models.video import Video, VideoStatus
+from src.schemas.video import VideoCreate, VideoResponse, VideoListResponse, TaskStatusResponse
+from src.api.dependencies.auth import get_current_active_user
+from src.core.tasks import process_video_task
 
 router = APIRouter()
 
-class VideoRequest(BaseModel):
-    url: str
 
-class TaskResponse(BaseModel):
-    task_id: str
-    status: str
+@router.post("/process", response_model=VideoResponse, status_code=status.HTTP_201_CREATED)
+async def process_video(
+    request: VideoCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Create a new video processing request and start background task.
+    Requires authentication.
+    """
+    # Create video record in database
+    video = Video(
+        user_id=current_user.id,
+        url=request.url,
+        status=VideoStatus.PROCESSING
+    )
 
-@router.post("/process", response_model=TaskResponse)
-async def process_video(request: VideoRequest):
+    db.add(video)
+    await db.commit()
+    await db.refresh(video)
+
+    # Dispatch Celery task with video_id
+    task = process_video_task.delay(request.url, video.id)
+
+    # Update video with task_id
+    video.task_id = task.id
+    await db.commit()
+    await db.refresh(video)
+
+    return video
+
+
+@router.get("/", response_model=VideoListResponse)
+async def list_videos(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
     """
-    Inicia o processamento de um vídeo em background.
+    List all videos for the authenticated user.
     """
-    # Dispara a task do Celery
-    task = process_video_task.delay(request.url)
-    
+    result = await db.execute(
+        select(Video)
+        .where(Video.user_id == current_user.id)
+        .order_by(Video.created_at.desc())
+    )
+    videos = result.scalars().all()
+
     return {
-        "task_id": task.id,
-        "status": "processing"
+        "videos": videos,
+        "total": len(videos)
     }
 
-@router.get("/status/{task_id}")
-async def get_status(task_id: str):
+
+@router.get("/{video_id}", response_model=VideoResponse)
+async def get_video(
+    video_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
     """
-    Verifica o status de uma tarefa.
+    Get details of a specific video.
+    Only the video owner can access it.
     """
+    result = await db.execute(
+        select(Video).where(
+            Video.id == video_id,
+            Video.user_id == current_user.id
+        )
+    )
+    video = result.scalar_one_or_none()
+
+    if not video:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vídeo não encontrado"
+        )
+
+    return video
+
+
+@router.get("/status/{task_id}", response_model=TaskStatusResponse)
+async def get_task_status(
+    task_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Check the status of a video processing task.
+    """
+    # Get video by task_id
+    result = await db.execute(
+        select(Video).where(
+            Video.task_id == task_id,
+            Video.user_id == current_user.id
+        )
+    )
+    video = result.scalar_one_or_none()
+
+    if not video:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task não encontrada ou não pertence ao usuário"
+        )
+
+    # Get Celery task status
     task_result = AsyncResult(task_id)
-    
-    response = {
+
+    return {
         "task_id": task_id,
         "status": task_result.status,
+        "video_id": video.id,
         "result": task_result.result if task_result.ready() else None
     }
-    
-    return response
 
