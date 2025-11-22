@@ -1,7 +1,7 @@
 # Importa os agentes especializados para cada etapa do processo
 # CORRIGIDO: Imports relativos para funcionar dentro do pacote backend
 from src.agents.transcriber import transcricao_youtube_video
-from src.agents.analyst import executar_agente_analista
+from src.agents.analyst import AnalystAgent  # Novo agente com JSON/Pydantic
 from src.agents.editor import executar_agente_editor
 
 # Importa configurações centralizadas
@@ -21,7 +21,7 @@ from typing import TypedDict, Optional, Dict, Any
 # Necessário para salvar o arquivo de cortes
 import json 
 
-# --------------------------------------------------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------
 # Define a classe (dicionário) que representa o estado do grafo
 # total = False, indica que não é necessário preencher todos os campos de uma vez só
 class CortAIState(TypedDict, total=False): 
@@ -33,36 +33,31 @@ class CortAIState(TypedDict, total=False):
     highlight_path: str
     error: str
 
-# --------------------------------------------------------------------------------------------------------------------------------------
-# Definindo os nós (estações de trabalho) - O nó recebe algo -> processa -> retorna o estado atualizado
-# --------------------------------------------------------------------------------------------------------------------------------------
 
+# Nó 1: Transcrever vídeo
 def node_transcrever(state: CortAIState) -> CortAIState:
     """
     Primeiro nó: responsável por baixar o vídeo e gerar a transcrição (Whisper)
     """
     print("\n -> [1/3] Transcrevendo vídeo...\n")
 
-    # Extrai a URL do estado atual
     url = state["url"]
 
-    # Chama o agente transcritor usando paths centralizados
     transcription = transcricao_youtube_video(
         url=url,
         temp_video_path=TEMP_VIDEO_PATH,
         output_json_path=TEMP_TRANSCRIPTION_PATH
     )
 
-    # Atualiza o estado com as novas informações obtidas
     state["video_path"] = TEMP_VIDEO_PATH
     state["transcription_path"] = TEMP_TRANSCRIPTION_PATH
     state["transcription"] = transcription
 
     print("\n ✔ Transcrição concluída!")
-
     return state
 
-# --------------------------------------------------------------------------------------------------------------------------------------
+# Nó 2: Analisar transcrição com AnalystAgent
+# ----------------------------------------------------------------------
 
 def node_analisar(state: CortAIState) -> CortAIState:
     """
@@ -70,70 +65,87 @@ def node_analisar(state: CortAIState) -> CortAIState:
     """
     print("\n -> [2/3] Analisando transcrição...")
 
-    # Recupera o caminho da transcrição salvo no nó anterior
-    transcription_path = state["transcription_path"]
+    transcription_path = state.get("transcription_path")
+    if not transcription_path:
+        state["error"] = "Transcription path não encontrado no estado!"
+        return state
 
-    # Chama o agente analista
-    highlight = executar_agente_analista(transcription_path)
+    # Carrega a transcrição do arquivo
+    try:
+        with open(transcription_path, "r", encoding="utf-8") as f:
+            transcription_json = json.load(f)
+    except Exception as e:
+        state["error"] = f"Falha ao carregar transcrição: {str(e)}"
+        return state
 
-    # Guarda a decisão da LLM de corte no estado
-    state["highlight"] = highlight
+    texto_transcricao = transcription_json.get("text", "").strip()
+    if not texto_transcricao:
+        state["error"] = "Transcrição vazia ou inválida!"
+        return state
 
-    # Salva o arquivo para o agente editor ler
-    with open(TEMP_HIGHLIGHT_JSON_PATH, "w", encoding="utf-8") as f:
-        json.dump(highlight, f, indent=4, ensure_ascii=False)
-    print(f"\nArquivo de corte salvo em: {TEMP_HIGHLIGHT_JSON_PATH}")
+    # Cria o agente analista e executa
+    agent = AnalystAgent()
+    highlight_output, error = agent.run(texto_transcricao)
+
+    if error:
+        state["error"] = f"AnalystError: {error}"
+        return state
+
+    # Salva o resultado validado
+    state["highlight"] = highlight_output.dict()
+
+    # Salva JSON para o editor
+    try:
+        with open(TEMP_HIGHLIGHT_JSON_PATH, "w", encoding="utf-8") as f:
+            json.dump(state["highlight"], f, indent=4, ensure_ascii=False)
+        print(f"\nArquivo de corte salvo em: {TEMP_HIGHLIGHT_JSON_PATH}")
+    except Exception as e:
+        state["error"] = f"Erro ao salvar highlight JSON: {str(e)}"
+        return state
 
     print("\n ✔ Análise concluída!")
+    return state
 
-    return state 
-
-# --------------------------------------------------------------------------------------------------------------------------------------
-
+# Nó 3: Editar vídeo
 def node_editar(state: CortAIState) -> CortAIState:
     """
     Terceiro nó: o editor, corta o vídeo original baseado na análise
     """
     print("\n -> [3/3] Editando o vídeo...")
 
-    # Chama o agente editor usando paths centralizados
-    result_path = executar_agente_editor(
-        input_video=state["video_path"],
-        highlight_json=TEMP_HIGHLIGHT_JSON_PATH,
-        output_video=TEMP_HIGHLIGHT_VIDEO_PATH
-    )
-
-    # Atualiza o estado com o caminho do produto final
-    state["highlight_path"] = result_path
-
-    print("\n ✔ Highlight gerado!")
+    try:
+        result_path = executar_agente_editor(
+            input_video=state["video_path"],
+            highlight_json=TEMP_HIGHLIGHT_JSON_PATH,
+            output_video=TEMP_HIGHLIGHT_VIDEO_PATH
+        )
+        state["highlight_path"] = result_path
+        print("\n ✔ Highlight gerado!")
+    except Exception as e:
+        state["error"] = f"EditorError: {str(e)}"
 
     return state
 
-# --------------------------------------------------------------------------------------------------------------------------------------
+# Montagem do fluxo completo
 
-# Montagem do fluxo 
-def build_graph(): 
+def build_graph():
     """
     Função que cria e compila o grafo do fluxo de execução
     """
-
-    # Inicializa o grafo passando a definição de tipagem do estado 
     workflow = StateGraph(CortAIState)
 
-    # Adiciona os nós 
+    # Adiciona os nós
     workflow.add_node("transcrever", node_transcrever)
     workflow.add_node("analisar", node_analisar)
     workflow.add_node("editar", node_editar)
 
-    # Define onde o fluxo começa 
+    # Define ponto de entrada
     workflow.set_entry_point("transcrever")
 
-    # Define as arestas (o caminho que a informação percorre)
+    # Define arestas (fluxo de execução)
     workflow.add_edge("transcrever", "analisar")
     workflow.add_edge("analisar", "editar")
     workflow.add_edge("editar", END)
 
-    # Compila o grafo 
+    # Compila e retorna o grafo
     return workflow.compile()
-
