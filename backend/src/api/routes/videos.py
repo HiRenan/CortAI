@@ -127,6 +127,10 @@ async def get_task_status(
         "task_id": task_id,
         "status": task_result.status,
         "video_id": video.id,
-        "result": task_result.result if task_result.ready() else None
+        "result": task_result.result if task_result.ready() else None,
+        # Progress tracking fields from database
+        "progress_stage": video.progress_stage,
+        "progress_percentage": video.progress_percentage,
+        "progress_message": video.progress_message
     }
 
