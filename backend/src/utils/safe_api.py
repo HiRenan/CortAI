@@ -1,32 +1,36 @@
+"""
+Centraliza chamadas seguras a APIs externas (Gemini, YouTube, etc.)
+Garantindo que qualquer exceção seja capturada e nunca quebre o fluxo do LangGraph.
+"""
+
 import logging
 
-# FUNÇÃO DE CHAMADA SEGURA AO LLM
+# Configuração básica do logger
+log = logging.getLogger("safe_api")
 
-def safe_llm_call(model, prompt):
+
+# CHAMADA SEGURA A MODELOS LLM (GEMINI)
+def safe_llm_call(model, prompt: str):
     """
-    Executa a chamada ao LLM de forma segura, capturando qualquer erro.
-    
+    Executa uma chamada segura ao modelo Gemini.
+
     Args:
-        model: instância do Gemini (genai.GenerativeModel)
-        prompt: str, prompt a ser enviado ao modelo
+        model: instância de google.generativeai.GenerativeModel
+        prompt (str): texto enviado ao LLM
 
     Returns:
-        tuple: 
-            - resposta_texto (str | None): Texto retornado pelo modelo (ou None em caso de erro)
-            - erro (str | None): Mensagem de erro, caso ocorra, ou None se sucesso
-
-    Observações:
-        - Garante que a aplicação principal não quebre com erros do LLM
-        - Útil para integração com LangGraph, que espera sempre um retorno seguro
+        tuple:
+            (response_text | None, error_message | None)
     """
     try:
-        # Gera o conteúdo do LLM usando o prompt fornecido
         response = model.generate_content(prompt)
+        text = response.text.strip() if response and hasattr(response, "text") else None
 
-        # Retorna a resposta limpa
-        return response.text.strip(), None
+        if not text:
+            return None, "LLM retornou resposta vazia ou sem campo 'text'."
+
+        return text, None
 
     except Exception as e:
-        # Loga o erro e retorna mensagem segura
-        logging.error(f"Erro na chamada ao LLM: {e}")
+        log.exception(f"Erro durante chamada ao LLM: {e}")
         return None, str(e)
