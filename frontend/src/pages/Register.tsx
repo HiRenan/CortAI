@@ -4,6 +4,7 @@ import { useAuthStore } from '../store/authStore'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
+import mascoteImg from '../assets/mascote.png'
 
 export function Register() {
   const navigate = useNavigate()
@@ -98,9 +99,9 @@ export function Register() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-50 via-slate-50 to-indigo-50 px-4 py-8">
       <Card className="w-full max-w-md shadow-xl">
         <CardHeader className="text-center">
-          <div className="flex justify-center mb-4">
-            <div className="w-20 h-20 rounded-xl bg-gradient-to-br from-teal-600 to-indigo-600 flex items-center justify-center shadow-lg">
-              <span className="text-3xl font-bold text-white">CA</span>
+          <div className="flex justify-center mb-6">
+            <div className="w-36 h-36 rounded-2xl bg-gradient-to-br from-teal-600 to-indigo-600 flex items-center justify-center shadow-xl p-4">
+              <img src={mascoteImg} alt="CortAI Mascote" className="w-full h-full object-contain" />
             </div>
           </div>
           <h2 className="text-2xl font-bold text-slate-900 mb-2">

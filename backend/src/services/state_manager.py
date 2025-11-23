@@ -138,7 +138,8 @@ def update_job_state(job_id: str, status: str, current_step: str, data: Dict[str
     if data: 
         current_state.update(data) 
 
-    client.set(key, json.dumps(current_state)) # Salva o job no Redis 
+    # Salva o job no Redis
+    client.set(key, json.dumps(current_state)) 
     log.info(f"Job {job_id} atualizado. Status: {status}, Passo: {current_step}")
 
 # --------------------------------------------------------------------------------------------------------------------------------------

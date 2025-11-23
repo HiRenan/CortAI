@@ -83,90 +83,124 @@ export function Dashboard() {
       {/* Hero Section */}
       <HeroSection />
 
-      {/* Upload Form */}
-      <div className="bg-white rounded-lg shadow-md border border-slate-200 p-6">
-        <h2 className="text-lg font-semibold text-slate-900 mb-4">
-          Processar Novo Vídeo
-        </h2>
+      {/* Upload Form - Redesigned */}
+      <div className="relative overflow-hidden bg-gradient-to-br from-white via-indigo-50/30 to-teal-50/30 rounded-xl shadow-lg border border-slate-200/60 p-8">
+        {/* Subtle background pattern */}
+        <div className="absolute inset-0 opacity-[0.03]">
+          <div className="absolute inset-0" style={{
+            backgroundImage: 'radial-gradient(circle at 2px 2px, rgb(99 102 241) 1px, transparent 0)',
+            backgroundSize: '32px 32px'
+          }} />
+        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <div className="flex gap-3">
-              <input
-                type="text"
-                value={url}
-                onChange={(e) => {
-                  setUrl(e.target.value)
-                  setUrlError(null)
-                }}
-                placeholder="https://youtube.com/watch?v=..."
-                className={`
-                  flex-1 px-4 py-3 rounded-lg border transition-all
-                  focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent
-                  ${urlError ? 'border-red-300 bg-red-50' : 'border-slate-300'}
-                `}
-                disabled={isSubmitting}
-              />
-              <button
-                type="submit"
-                disabled={isSubmitting || !url.trim()}
-                className="
-                  px-6 py-3 bg-gradient-to-r from-indigo-600 to-teal-600 text-white
-                  rounded-lg font-medium shadow-md hover:shadow-lg
-                  transition-all hover:from-indigo-700 hover:to-teal-700
-                  disabled:opacity-50 disabled:cursor-not-allowed
-                  flex items-center gap-2
-                "
-              >
-                <Send className="w-4 h-4" strokeWidth={2} />
-                {isSubmitting ? 'Processando...' : 'Processar'}
-              </button>
+        <div className="relative">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-teal-500 shadow-md">
+              <Send className="w-5 h-5 text-white" strokeWidth={2.5} />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">
+                Processar Novo Vídeo
+              </h2>
+              <p className="text-sm text-slate-600">Transforme seu conteúdo em clips virais</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {/* URL Input */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                URL do Vídeo
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={url}
+                  onChange={(e) => {
+                    setUrl(e.target.value)
+                    setUrlError(null)
+                  }}
+                  placeholder="https://youtube.com/watch?v=..."
+                  className={`
+                    w-full pl-4 pr-4 py-4 rounded-xl border-2 transition-all text-base
+                    focus:outline-none focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500
+                    ${urlError ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white hover:border-slate-300'}
+                  `}
+                  disabled={isSubmitting}
+                />
+              </div>
+
+              {urlError && (
+                <div className="flex items-center gap-2 mt-2 text-sm text-red-600 bg-red-50 p-3 rounded-lg border border-red-200">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" strokeWidth={2} />
+                  <span>{urlError}</span>
+                </div>
+              )}
+
+              {error && (
+                <div className="flex items-center gap-2 mt-2 text-sm text-red-600 bg-red-50 p-3 rounded-lg border border-red-200">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" strokeWidth={2} />
+                  <span>{error}</span>
+                </div>
+              )}
             </div>
 
-            {urlError && (
-              <div className="flex items-center gap-2 mt-2 text-sm text-red-600">
-                <AlertCircle className="w-4 h-4" strokeWidth={2} />
-                <span>{urlError}</span>
+            {/* Max Highlights Selector */}
+            <div className="bg-white/70 backdrop-blur-sm rounded-xl p-5 border border-slate-200/60 shadow-sm">
+              <label htmlFor="maxHighlights" className="block text-sm font-medium text-slate-700 mb-3">
+                Número de Highlights
+              </label>
+              <div className="flex items-center gap-4">
+                <input
+                  type="number"
+                  id="maxHighlights"
+                  min="1"
+                  max="20"
+                  value={maxHighlights}
+                  onChange={(e) => setMaxHighlights(Math.min(20, Math.max(1, parseInt(e.target.value) || 5)))}
+                  className="
+                    w-24 px-4 py-3 rounded-lg border-2 border-slate-200
+                    focus:outline-none focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500
+                    text-center text-lg font-bold bg-white
+                  "
+                  disabled={isSubmitting}
+                />
+                <span className="text-sm text-slate-600 flex-1">
+                  Recomendado: <strong className="text-indigo-600">3-10</strong> para melhores resultados
+                </span>
               </div>
-            )}
+            </div>
 
-            {error && (
-              <div className="flex items-center gap-2 mt-2 text-sm text-red-600">
-                <AlertCircle className="w-4 h-4" strokeWidth={2} />
-                <span>{error}</span>
+            {/* Platform Info */}
+            <div className="flex items-center gap-2 text-sm text-slate-600 px-1">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 bg-teal-500 rounded-full animate-pulse"></span>
+                <span className="font-medium">Plataformas:</span>
               </div>
-            )}
-          </div>
+              <span>YouTube • Twitch • Vimeo</span>
+            </div>
 
-          {/* Max Highlights Selector */}
-          <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
-            <label htmlFor="maxHighlights" className="text-sm font-medium text-slate-700">
-              Número de highlights:
-            </label>
-            <input
-              type="number"
-              id="maxHighlights"
-              min="1"
-              max="20"
-              value={maxHighlights}
-              onChange={(e) => setMaxHighlights(Math.min(20, Math.max(1, parseInt(e.target.value) || 5)))}
+            {/* Submit Button */}
+            <button
+              type="submit"
+              disabled={isSubmitting || !url.trim()}
               className="
-                w-20 px-3 py-2 rounded-lg border border-slate-300
-                focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent
-                text-center font-semibold bg-white
+                w-full relative group overflow-hidden
+                px-8 py-4 bg-gradient-to-r from-indigo-600 to-teal-600 text-white
+                rounded-xl font-semibold text-base shadow-lg hover:shadow-xl
+                transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]
+                disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100
+                flex items-center justify-center gap-3
               "
-              disabled={isSubmitting}
-            />
-            <span className="text-sm text-slate-500">
-              (Recomendado: 3-10 para melhores resultados)
-            </span>
-          </div>
-
-          <p className="text-xs text-slate-500 flex items-center gap-2">
-            <span className="w-1.5 h-1.5 bg-teal-500 rounded-full"></span>
-            Plataformas suportadas: YouTube, Twitch, Vimeo
-          </p>
-        </form>
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-indigo-700 to-teal-700 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              <Send className="w-5 h-5 relative z-10 transition-transform group-hover:translate-x-1" strokeWidth={2.5} />
+              <span className="relative z-10">
+                {isSubmitting ? 'Processando Vídeo...' : 'Processar Vídeo'}
+              </span>
+            </button>
+          </form>
+        </div>
       </div>
 
       {/* Stats Cards */}

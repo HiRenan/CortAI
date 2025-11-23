@@ -6,6 +6,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     git \
+    && pip install --no-cache-dir yt-dlp \
     && rm -rf /var/lib/apt/lists/*
 
 # Install CPU-only PyTorch first to avoid downloading huge CUDA wheels
