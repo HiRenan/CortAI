@@ -52,13 +52,19 @@ async def process_video(
     max_highlights = request.max_highlights or 5
     include_subtitles = request.include_subtitles if request.include_subtitles is not None else True
     subtitle_style = request.subtitle_style or "youtube"
+    use_stream_collector = request.use_stream_collector if request.use_stream_collector is not None else False
+    stream_segment_duration = request.stream_segment_duration or 60
+    stream_max_duration = request.stream_max_duration or 300
 
     task = process_video_task.delay(
         request.url,
         video.id,
         max_highlights,
         include_subtitles,
-        subtitle_style
+        subtitle_style,
+        use_stream_collector,
+        stream_segment_duration,
+        stream_max_duration,
     )
 
     video.task_id = task.id

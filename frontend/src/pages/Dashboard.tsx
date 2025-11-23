@@ -10,7 +10,7 @@ const URL_REGEX = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be|twitch\.tv|vim
 
 export function Dashboard() {
   const [url, setUrl] = useState('')
-  const [maxHighlights, setMaxHighlights] = useState(5)
+  const [maxHighlights] = useState(5)
   const [includeSubtitles, setIncludeSubtitles] = useState(true)
   const [urlError, setUrlError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -146,38 +146,14 @@ export function Dashboard() {
               )}
             </div>
 
-            {/* Max Highlights Selector */}
-            <div className="bg-white/70 backdrop-blur-sm rounded-xl p-5 border border-slate-200/60 shadow-sm">
-              <label htmlFor="maxHighlights" className="block text-sm font-medium text-slate-700 mb-3">
-                Número de Highlights
-              </label>
-              <div className="flex items-center gap-4">
-                <input
-                  type="number"
-                  id="maxHighlights"
-                  min="1"
-                  max="20"
-                  value={maxHighlights}
-                  onChange={(e) => setMaxHighlights(Math.min(20, Math.max(1, parseInt(e.target.value) || 5)))}
-                  className="
-                    w-24 px-4 py-3 rounded-lg border-2 border-slate-200
-                    focus:outline-none focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500
-                    text-center text-lg font-bold bg-white
-                  "
-                  disabled={isSubmitting}
-                />
-                <span className="text-sm text-slate-600 flex-1">
-                  Recomendado: <strong className="text-indigo-600">3-10</strong> para melhores resultados
-                </span>
-              </div>
-            </div>
+            {/* Max Highlights removido */}
 
             {/* Subtitle Toggle */}
             <div className="bg-white/70 backdrop-blur-sm rounded-xl p-5 border border-slate-200/60 shadow-sm">
               <label className="flex items-center justify-between cursor-pointer group">
                 <div className="flex-1">
                   <div className="text-sm font-medium text-slate-700 mb-1">
-                    Legendas Queimadas
+                  Legendas
                   </div>
                   <div className="text-xs text-slate-600">
                     Adiciona legendas diretamente no vídeo (estilo YouTube/TikTok)

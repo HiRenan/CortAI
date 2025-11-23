@@ -5,7 +5,8 @@
 - Python 3.11+
 - Node.js 20+
 - Docker & Docker Compose
-- FFmpeg
+- FFmpeg instalado ou caminho configurado via `FFMPEG_PATH`
+- Conta Google Gemini (`GOOGLE_API_KEY`)
 - Git
 
 ## Instalação
@@ -19,31 +20,27 @@ cd CortAI
 
 ### 2. Configuração com Docker (Recomendado)
 
-#### Subir todos os serviços
-
 ```bash
-docker-compose up -d
+# Subir serviços
+docker-compose up -d --build
+
+# Rodar migrações (obrigatório)
+docker-compose run --rm backend alembic upgrade head
+
+# Ver logs
+docker-compose logs -f
+
+# Parar
+docker-compose down
 ```
 
-Serviços disponíveis:
+Serviços:
 - Backend API: http://localhost:8000
 - Frontend: http://localhost:5173
 - PostgreSQL: localhost:5432
 - Redis: localhost:6379
 
-#### Ver logs
-
-```bash
-docker-compose logs -f
-```
-
-#### Parar serviços
-
-```bash
-docker-compose down
-```
-
-### 3. Configuração Manual
+### 3. Configuração Manual (sem Docker)
 
 #### Backend
 
@@ -61,7 +58,7 @@ pip install -r requirements.txt
 
 # Configurar variáveis de ambiente
 cp .env.example .env
-# Edite o .env com suas configurações
+# Edite o .env com suas configurações (DB, Redis, GOOGLE_API_KEY, FFMPEG_PATH)
 
 # Executar migrações
 alembic upgrade head
@@ -80,7 +77,7 @@ npm install
 
 # Configurar variáveis de ambiente
 cp .env.example .env
-# Edite o .env com suas configurações
+VITE_API_URL=http://localhost:8000
 
 # Iniciar servidor de desenvolvimento
 npm run dev
@@ -151,13 +148,19 @@ brew services start redis
 # Application
 APP_NAME=CortAI
 APP_ENV=development
-SECRET_KEY=your-secret-key-here
+JWT_SECRET_KEY=your-secret-key
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
 
 # Database
-DATABASE_URL=postgresql://user:password@localhost:5432/cortai
+DATABASE_URL=postgresql+asyncpg://cortai:cortai_password@localhost:5432/cortai
 
-# Redis
+# Redis / Celery
 REDIS_URL=redis://localhost:6379/0
+CELERY_BROKER_URL=redis://localhost:6379/1
+
+# RabbitMQ (opcional para pipeline legacy)
+RABBITMQ_URL=amqp://cortai:cortai_password@localhost:5672/
 
 # FFmpeg
 FFMPEG_PATH=/usr/bin/ffmpeg  # ou caminho no Windows
@@ -166,8 +169,8 @@ FFMPEG_PATH=/usr/bin/ffmpeg  # ou caminho no Windows
 WHISPER_MODEL=base  # tiny, base, small, medium, large
 WHISPER_DEVICE=cpu  # ou cuda para GPU
 
-# Storage
-STORAGE_PATH=../storage
+# Gemini API Key
+GOOGLE_API_KEY=
 ```
 
 ### Frontend (.env)
