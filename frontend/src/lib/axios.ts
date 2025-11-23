@@ -4,7 +4,7 @@
 import axios, { AxiosError, type AxiosRequestConfig } from 'axios'
 import type { ApiError } from '../types/api'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 // Create axios instance with default config
 export const api = axios.create({

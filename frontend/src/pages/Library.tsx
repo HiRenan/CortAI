@@ -1,14 +1,18 @@
 import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge'
-import { Video, Clock, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { Video, Clock, CheckCircle, XCircle, Loader2, Play } from 'lucide-react'
 import videoService from '../services/videoService'
 import type { Video as VideoType } from '../types/api'
+import { API_URL } from '../lib/axios'
 
 export function Library() {
   const [videos, setVideos] = useState<VideoType[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [previewUrls, setPreviewUrls] = useState<Record<number, string>>({})
+  const [previewLoading, setPreviewLoading] = useState<Record<number, boolean>>({})
+  const [previewErrors, setPreviewErrors] = useState<Record<number, string | null>>({})
 
   useEffect(() => {
     let cancelled = false
@@ -40,8 +44,43 @@ export function Library() {
     // Cleanup function
     return () => {
       cancelled = true
+      Object.values(previewUrls).forEach((url) => URL.revokeObjectURL(url))
     }
-  }, [])
+  }, [previewUrls])
+
+  const handlePreview = async (video: VideoType) => {
+    if (!video.output_path) return
+    setPreviewErrors((prev) => ({ ...prev, [video.id]: null }))
+    setPreviewLoading((prev) => ({ ...prev, [video.id]: true }))
+
+    try {
+      const token = localStorage.getItem('auth_token')
+      if (!token) {
+        setPreviewErrors((prev) => ({ ...prev, [video.id]: 'Faça login para assistir' }))
+        setPreviewLoading((prev) => ({ ...prev, [video.id]: false }))
+        return
+      }
+
+      const res = await fetch(`${API_URL}/api/v1/videos/${video.id}/download`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      })
+
+      if (!res.ok) {
+        throw new Error('Falha ao baixar o corte para reprodução')
+      }
+
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      setPreviewUrls((prev) => ({ ...prev, [video.id]: url }))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro ao preparar o player'
+      setPreviewErrors((prev) => ({ ...prev, [video.id]: msg }))
+    } finally {
+      setPreviewLoading((prev) => ({ ...prev, [video.id]: false }))
+    }
+  }
 
   const getStatusIcon = (status: VideoType['status']) => {
     switch (status) {
@@ -91,6 +130,14 @@ export function Library() {
       hour: '2-digit',
       minute: '2-digit',
     })
+  }
+
+  const getYoutubeThumb = (url: string) => {
+    const matchId = url.match(/v=([A-Za-z0-9_-]{6,})/) || url.match(/youtu\.be\/([A-Za-z0-9_-]{6,})/)
+    if (matchId && matchId[1]) {
+      return `https://img.youtube.com/vi/${matchId[1]}/hqdefault.jpg`
+    }
+    return null
   }
 
   if (loading) {
@@ -158,8 +205,23 @@ export function Library() {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {videos.map((video) => (
           <Card key={video.id} className="overflow-hidden hover:shadow-lg transition-shadow">
-            <div className="aspect-video w-full bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center">
-              <Video className="h-12 w-12 text-gray-400" />
+            <div className="aspect-video w-full bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center overflow-hidden">
+              {previewUrls[video.id] ? (
+                <video
+                  src={previewUrls[video.id]}
+                  preload="metadata"
+                  controls
+                  className="w-full h-full object-cover"
+                />
+              ) : video.thumbnail_path || getYoutubeThumb(video.url) ? (
+                <img
+                  src={video.thumbnail_path || getYoutubeThumb(video.url) || undefined}
+                  alt={video.title || 'Thumbnail'}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <Video className="h-12 w-12 text-gray-400" />
+              )}
             </div>
             <CardHeader className="p-4">
               <div className="flex items-start justify-between gap-2">
@@ -181,9 +243,33 @@ export function Library() {
                 {formatDate(video.created_at)}
               </div>
               {video.output_path && (
-                <p className="text-xs text-green-600 mt-2 truncate">
-                  📁 {video.output_path}
-                </p>
+                <div className="mt-3 space-y-2">
+                  <button
+                    onClick={() => handlePreview(video)}
+                    disabled={previewLoading[video.id]}
+                    className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {previewLoading[video.id] ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Preparando player...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4" />
+                        Assistir corte
+                      </>
+                    )}
+                  </button>
+                  {previewErrors[video.id] && (
+                    <p className="text-xs text-red-600">{previewErrors[video.id]}</p>
+                  )}
+                  {previewUrls[video.id] && (
+                    <p className="text-xs text-green-600 truncate">
+                      📁 {video.output_path}
+                    </p>
+                  )}
+                </div>
               )}
             </CardContent>
           </Card>

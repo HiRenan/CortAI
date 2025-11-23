@@ -11,6 +11,7 @@ const URL_REGEX = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be|twitch\.tv|vim
 export function Dashboard() {
   const [url, setUrl] = useState('')
   const [maxHighlights, setMaxHighlights] = useState(5)
+  const [includeSubtitles, setIncludeSubtitles] = useState(true)
   const [urlError, setUrlError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -67,7 +68,7 @@ export function Dashboard() {
     if (!validateUrl(url)) return
 
     setIsSubmitting(true)
-    await addVideo(url, maxHighlights)
+    await addVideo(url, maxHighlights, includeSubtitles)
     setIsSubmitting(false)
     setUrl('')
   }
@@ -169,6 +170,40 @@ export function Dashboard() {
                   Recomendado: <strong className="text-indigo-600">3-10</strong> para melhores resultados
                 </span>
               </div>
+            </div>
+
+            {/* Subtitle Toggle */}
+            <div className="bg-white/70 backdrop-blur-sm rounded-xl p-5 border border-slate-200/60 shadow-sm">
+              <label className="flex items-center justify-between cursor-pointer group">
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-slate-700 mb-1">
+                    Legendas Queimadas
+                  </div>
+                  <div className="text-xs text-slate-600">
+                    Adiciona legendas diretamente no vídeo (estilo YouTube/TikTok)
+                  </div>
+                </div>
+                <div className="relative ml-4">
+                  <input
+                    type="checkbox"
+                    checked={includeSubtitles}
+                    onChange={(e) => setIncludeSubtitles(e.target.checked)}
+                    disabled={isSubmitting}
+                    className="sr-only peer"
+                  />
+                  <div className="
+                    w-14 h-8 bg-slate-200 rounded-full peer
+                    peer-focus:ring-4 peer-focus:ring-indigo-500/20
+                    peer-checked:bg-gradient-to-r peer-checked:from-indigo-600 peer-checked:to-teal-600
+                    transition-all duration-300
+                    peer-disabled:opacity-50 peer-disabled:cursor-not-allowed
+                  "></div>
+                  <div className="
+                    absolute left-1 top-1 w-6 h-6 bg-white rounded-full shadow-md
+                    peer-checked:translate-x-6 transition-transform duration-300
+                  "></div>
+                </div>
+              </label>
             </div>
 
             {/* Platform Info */}

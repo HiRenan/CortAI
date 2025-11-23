@@ -268,7 +268,7 @@ class AnalystAgent:
         """
         Executa o pipeline de análise com RAG.
         """
-        logger.info(f"Iniciando análise RAG para: {transcription_path}")
+        logger.info(f"Iniciando análise RAG para arquivo: {transcription_path}")
 
         # Carregar Transcrição
         with open(transcription_path, "r", encoding="utf-8") as f:

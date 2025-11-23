@@ -39,6 +39,7 @@ export interface Video {
   status: VideoStatus
   task_id: string | null
   output_path: string | null
+  thumbnail_path?: string | null
   created_at: string
 
   // Progress tracking
@@ -49,6 +50,9 @@ export interface Video {
 
 export interface VideoCreateRequest {
   url: string
+  max_highlights?: number
+  include_subtitles?: boolean
+  subtitle_style?: string
 }
 
 export interface VideoListResponse {
@@ -61,6 +65,10 @@ export interface TaskStatusResponse {
   status: string
   video_id: number | null
   result: Record<string, unknown> | null
+
+  // DB-backed video status/output
+  video_status?: VideoStatus
+  output_path?: string | null
 
   // Progress tracking
   progress_stage: ProgressStage
