@@ -6,6 +6,7 @@ Consome jobs da fila 'edit_queue' e publica resultados em 'completed_queue'.
 import os # Importa o módulo os
 import json # Importa o módulo json
 import logging # Importa o módulo logging
+import time # Usado para retry/backoff quando o arquivo de vídeo ainda não existir
 from src.services.state_manager import update_job_state, JobStatus # Importa as classes update_job_state e JobStatus
 
 # Importa as funções consume, publish, new_job, EDIT_QUEUE e COMPLETED_QUEUE do módulo messaging_rabbit
@@ -63,10 +64,10 @@ def handle_editor(message: dict):
             output_dir=output_dir
         )
     except Exception as e:
-        # Registra o erro
+        # Registra o erro e marca falha crítica sem levantar exceção para não interromper o loop de consumo
         log.exception(f"[{job_id}] Erro crítico durante edição: {e}")
         update_job_state(job_id, JobStatus.FAILED, "edit_critical_error")
-        raise
+        return
 
     # Normaliza retorno para lista e primeiro clip
     if isinstance(result_path, list):

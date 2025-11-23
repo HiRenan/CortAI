@@ -271,6 +271,67 @@ def node_editar(state: CortAIState) -> CortAIState:
 
     return state
 
+
+# --------------------------------------------------------------------------------------------------------------------------------------
+def node_planner(state: CortAIState) -> CortAIState:
+    """
+    Nó planner: chama o CrewAI para obter um plano (highlights + editor_params), valida
+    e injeta os highlights no estado. Também persiste um `highlight.json` compatível
+    com o agente editor para que o fluxo existente não precise mudar.
+    """
+    print("\n -> [PLANNER] Gerando plano via CrewAI (se habilitado)...")
+
+    plan = plan_job(state)
+
+    highlights = plan.get("highlights") if isinstance(plan, dict) else None
+    if not highlights:
+        # Se não houver highlights retornados, mantenha o que o analyst produziu
+        existing = state.get("highlight")
+        if isinstance(existing, dict) and "highlights" in existing:
+            highlights = existing.get("highlights", [])
+        else:
+            highlights = []
+
+    # Sanitize highlights: ensure numeric start/end and minimum duration
+    sanitized = []
+    MIN_DUR = float(os.getenv("CREWAI_MIN_HIGHLIGHT_SECONDS", "5"))
+    for h in highlights:
+        try:
+            start = float(h.get("start", h.get("inicio", 0)))
+            end = float(h.get("end", h.get("fim", start + MIN_DUR)))
+        except Exception:
+            continue
+        if end <= start:
+            end = start + MIN_DUR
+        if start < 0:
+            start = 0.0
+        summary = h.get("summary", h.get("resumo", ""))
+        score = h.get("score", h.get("pontuacao", 0))
+        sanitized.append({"start": start, "end": end, "summary": summary, "score": score})
+
+    # Injeta no estado no formato esperado pelo editor (mantendo compatibilidade)
+    state["highlight"] = {"highlights": sanitized}
+    state["highlights"] = sanitized
+    state["editor_params"] = plan.get("editor_params", {}) if isinstance(plan, dict) else {}
+
+    # Grava o arquivo highlight.json na pasta padrão para o editor ler
+    try:
+        job_id = state.get("job_id") or state.get("url", "no_job")
+        # Prefer job-specific path quando disponível
+        if "job_id" in state and state.get("job_id"):
+            out_dir = f"backend/data/jobs/{state.get('job_id')}/highlights"
+            os.makedirs(out_dir, exist_ok=True)
+            out_path = os.path.join(out_dir, "highlight.json")
+        else:
+            out_path = "backend/data/highlight.json"
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump({"highlights": sanitized}, f, ensure_ascii=False, indent=4)
+        print(f"\n[PLANNER] highlight.json salvo em: {out_path}")
+    except Exception as e:
+        print(f"[PLANNER] Aviso: não foi possível salvar highlight.json: {e}")
+
+    return state
+
 # --------------------------------------------------------------------------------------------------------------------------------------
 
 # Montagem do fluxo 
