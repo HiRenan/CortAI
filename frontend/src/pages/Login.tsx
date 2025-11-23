@@ -4,6 +4,7 @@ import { useAuthStore } from '../store/authStore'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
+import logoImg from '../assets/logo.png'
 
 export function Login() {
   const navigate = useNavigate()
@@ -79,9 +80,9 @@ export function Login() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 via-slate-50 to-teal-50 px-4">
       <Card className="w-full max-w-md shadow-xl">
         <CardHeader className="text-center">
-          <div className="flex justify-center mb-4">
-            <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-indigo-600 to-teal-600 flex items-center justify-center shadow-lg">
-              <span className="text-2xl font-bold text-white">CA</span>
+          <div className="flex justify-center mb-6">
+            <div className="w-32 h-32 rounded-2xl bg-gradient-to-br from-indigo-600 to-teal-600 flex items-center justify-center shadow-xl p-4">
+              <img src={logoImg} alt="CortAI Logo" className="w-full h-full object-contain" />
             </div>
           </div>
           <h2 className="text-2xl font-bold text-slate-900 mb-2">
