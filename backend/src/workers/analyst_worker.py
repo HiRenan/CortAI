@@ -13,6 +13,7 @@ from src.services.messaging_rabbit import (
     consume,
     publish,
     new_job,
+    declare_infraestructure,
     ANALYSE_QUEUE,
     EDIT_QUEUE
 )
@@ -48,11 +49,42 @@ def handle_analyst(message: dict):
     # Atualiza o estado do job
     update_job_state(job_id, JobStatus.PROCESSING, "analyse", {"transcription_path": transcription_path})
 
-    # Cria o diretório para os highlights
-    highlight_path = f"/app/data/highlights/{job_id}.json"
+    # Verifica se o arquivo de transcrição existe (com retries curtos)
+    import time as _time
+    max_attempts = 3
+    attempt = 0
+    while attempt < max_attempts and not os.path.exists(transcription_path):
+        log.warning(f"Arquivo de transcrição não encontrado: {transcription_path} (tentativa {attempt+1}/{max_attempts}). Aguardando 1s...")
+        _time.sleep(1)
+        attempt += 1
+
+    if not os.path.exists(transcription_path):
+        log.warning(f"Arquivo de transcrição ausente após {max_attempts} tentativas: {transcription_path}. Tentando localizar arquivo equivalente...")
+
+        # Tenta localizar o arquivo de transcrição pelo nome do segmento em /app/data/jobs
+        segment_name = os.path.basename(transcription_path)
+        found = None
+        for root, dirs, files in os.walk("/app/data/jobs"):
+            if segment_name in files:
+                found = os.path.join(root, segment_name)
+                log.info(f"Encontrado arquivo de transcrição alternativo em: {found}")
+                break
+
+        if found:
+            transcription_path = found
+        else:
+            log.error(f"Não foi possível localizar arquivo de transcrição para: {segment_name}")
+            update_job_state(job_id, JobStatus.FAILED, "analyse_missing_transcription", {"error": "transcription file missing", "path": transcription_path})
+            return
+
+    # Determina diretório pai do job a partir do caminho da transcrição (normaliza para fluxo de streams)
+    # Ex: transcription_path: /app/data/jobs/<parent_job>/segments/segment_000.json
+    parent_job_dir = os.path.dirname(os.path.dirname(transcription_path))
+    highlight_dir = os.path.join(parent_job_dir, "analysis")
+    highlight_path = os.path.join(highlight_dir, f"{job_id}.json")
 
     # Garante que o diretório existe
-    os.makedirs(os.path.dirname(highlight_path), exist_ok=True)
+    os.makedirs(highlight_dir, exist_ok=True)
 
     try:
         # Executa o agente analista
@@ -98,6 +130,12 @@ def handle_analyst(message: dict):
 if __name__ == "__main__":
     # Inicia o worker
     print("\n=== WORKER ANALYST INICIADO ===")
+    
+    # Garante que a infraestrutura de filas existe
+    print("Verificando infraestrutura de filas...")
+    declare_infraestructure()
+    print("Infraestrutura verificada!\n")
+    
     print(f"Escutando fila: {ANALYSE_QUEUE}")
     print("Aguardando jobs...\n")
 

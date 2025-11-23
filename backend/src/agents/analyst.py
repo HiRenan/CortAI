@@ -1,225 +1,404 @@
 import os # Interage com o Sistema Operacional
-import json # Faz a leitura/escrita em objetos do tipo JSON
-import re # Expressões Regulares
-from dotenv import load_dotenv # Acessa as variáveis de ambiente 
-import google.generativeai as genai # Acessa o modelo de linguagem do Google (Gemini)
+import json # Manipulação de arquivos JSON
+import logging # Registro de logs
+import shutil # Copia e move arquivos
+import uuid # Geração de identificadores únicos
+from typing import List, Optional, Dict, Any # Tipagem estática
+from dotenv import load_dotenv # Carrega variáveis de ambiente
+import google.generativeai as genai # Importa o modelo de linguagem do Google (Gemini)
+from pydantic import BaseModel, ValidationError #
+import time # Controle de tempo
+import chromadb # Banco de Dados Vetorial
+from chromadb.utils import embedding_functions # Função de embedding
 
-# Acessa as variáveis de ambiente e obtem a chave da api do Gemini
+# Configuração de logs
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("analyst_agent")
+
+# Carrega variáveis de ambiente e obtem a chave de API do Gemini
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-# Caso a chave não seja encontrada, retorna a mensagem de erro
 if not GEMINI_API_KEY:
     raise ValueError("ERRO: variável GOOGLE_API_KEY não encontrada no .env!")
 
-# Configura o cliente Gemini com a API key
+# Configura o modelo com a chave de API
 genai.configure(api_key=GEMINI_API_KEY)
 
-# --------------------------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------
 
-def normalizar_timestamp(ts):
+class Highlight(BaseModel):
     """
-    Normaliza timestamps para o formato padrão HH:MM:SS.
+    Estrutura de um highlight identificado.
+    """
+    start: float
+    end: float
+    summary: str # Resumo do highlight
+    score: float # Score do highlight
 
-    Args:
-        ts(str) - Timestamp no formato HH:MM:SS ou MM:SS
+# -----------------------------------------------------------------------------------------------------------------
 
-    Returns:
-        str - Timestamp normalizado no formato HH:MM:SS
+class RateLimitedGeminiEmbeddingFunction(embedding_functions.EmbeddingFunction):
+    """
+    Função de embedding customizada para o Gemini com Rate Limiting.
+    O plano gratuito permite apenas 15 RPM (Requisições Por Minuto).
+    Esta classe garante um intervalo seguro entre as chamadas.
+    """
+    def __init__(self, api_key: str, model_name: str = "models/text-embedding-004"):
+        self.api_key = api_key
+        self.model_name = model_name
+        genai.configure(api_key=api_key)
+
+    def __call__(self, input: List[str]) -> List[List[float]]:
+        embeddings = []
+        total = len(input)
+        
+        for i, text in enumerate(input):
+            logger.info(f"Gerando embedding {i+1}/{total}...")
+            retry_count = 0
+            
+            while True:
+                try:
+                    # Substitui textos vazios por placeholder para evitar erro da API
+                    if not isinstance(text, str) or not text.strip():
+                        logger.warning(f"Input de embedding vazio no índice {i}. Usando placeholder.")
+                        text_to_embed = "[no_text]"
+                    else:
+                        text_to_embed = text
+
+                    # Delay preventivo de 4.5s (garante ~13 RPM, abaixo do limite de 15)
+                    # O primeiro também espera para garantir intervalo com requisições anteriores
+                    time.sleep(4.5)
+
+                    result = genai.embed_content(
+                        model=self.model_name,
+                        content=text_to_embed,
+                        task_type="retrieval_document"
+                    )
+                    embeddings.append(result['embedding'])
+                    break
+                    
+                except Exception as e:
+                    error_msg = str(e)
+                    if "429" in error_msg or "ResourceExhausted" in error_msg:
+                        if retry_count >= 3:
+                            logger.error("Máximo de tentativas (3) excedido para rate limit.")
+                            raise e
+                            
+                        wait_time = 60 # Espera 1 minuto se tomar 429
+                        logger.warning(f"Rate limit (429) atingido. Aguardando {wait_time}s... (Tentativa {retry_count+1}/3)")
+                        time.sleep(wait_time)
+                        retry_count += 1
+                    else:
+                        logger.error(f"Erro não tratado no embedding: {e}")
+                        raise e
+                        
+        return embeddings
+
+# -----------------------------------------------------------------------------------------------------------------
+
+class AnalystOutput(BaseModel):
+    """
+    Saída estruturada do agente analista.
     """
 
-    # Divide a string do timestamp usando ':' como delimitador
-    # Exemplo: "05:30" → ["05", "30"] ou "1:23:45" → ["1", "23", "45"]
-    partes = ts.split(":")
+    # Lista de highlights identificados
+    highlights: List[Highlight]
+
+# -----------------------------------------------------------------------------------------------------------------
+
+# Schema JSON para forçar saída estruturada do Gemini
+JSON_SCHEMA = {
+    "type": "object", # Tipo de dados
+    "properties": {
+        "highlights": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "start": {"type": "number"},
+                    "end": {"type": "number"},
+                    "summary": {"type": "string"},
+                    "score": {"type": "number"},
+                },
+                "required": ["start", "end", "summary", "score"]
+            }
+        }
+    },
+    "required": ["highlights"] # Campos obrigatórios
+}
+
+# -----------------------------------------------------------------------------------------------------------------
+
+class AnalystAgent:
+    """
+    Agente Analista com RAG (Retrieval-Augmented Generation).
     
-    # Se o timestamp tem apenas 2 partes (formato MM:SS), adiciona "00" no início para representar as horas
-    # Exemplo: ["05", "30"] → ["00", "05", "30"]
-    if len(partes) == 2:
-        partes = ["00"] + partes
-
-    # Converte cada parte para inteiro usando map() e desempacota nas variáveis h, m, s
-    # Exemplo: ["00", "05", "30"] → h=0, m=5, s=30
-    h, m, s = map(int, partes)
-
-    # Formata cada componente com 2 dígitos e junta com ':'
-    # Exemplo: 0, 5, 30 → "00:05:30"
-    return f"{h:02d}:{m:02d}:{s:02d}"
-
-# --------------------------------------------------------------------------------------------------------------------------------------
-
-def converter_timestamp(timestamp):
-    """
-    Converte timestamp no formato HH:MM:SS para segundos totais.
-
-    Args:
-        timestamp(str) - Timestamp no formato HH:MM:SS
-
-    Returns:
-        int - Total de segundos representado pelo timestamp
-    """
-    # Divide o timestamp e converte cada componente para segundos
-    horas, minutos, segundos = timestamp.split(":")
-
-    # Retorna o total de tempo em segundos somado
-    return int(horas) * 3600 + int(minutos) * 60 + int(segundos)
-
-# --------------------------------------------------------------------------------------------------------------------------------------
-
-def extrair_timestamp(resposta):
-    """
-    Extrai intervalos de timestamp da resposta do modelo Gemini.
-
-    Args:
-        resposta(str) - Texto retornado pelo modelo contendo timestamps
-
-    Returns:
-        tuple - Tupla contendo (inicio_segundos, fim_segundos) ou (None, None) em caso de erro
+    Fluxo:
+    1. Recebe a transcrição completa (JSON).
+    2. Divide em chunks (trechos) com timestamps.
+    3. Gera embeddings para cada chunk.
+    4. Armazena no ChromaDB.
+    5. Busca os chunks mais relevantes para critérios de "viralidade" e "impacto".
+    6. Envia apenas os chunks relevantes para o LLM decidir o corte final.
     """
 
-    # Padrão regex que busca por dois timestamps separados por hífen/traço
-    padrao = r"(\d{1,2}:\d{1,2}:\d{1,2}|\d{1,2}:\d{1,2})\s*[-–]\s*(\d{1,2}:\d{1,2}:\d{1,2}|\d{1,2}:\d{1,2})"
-    
-    # Busca por todos os intervalos de tempo encontrados na resposta
-    intervalos_encontrados = re.findall(padrao, resposta)
+    def __init__(self, model_name="gemini-2.5-flash"):
+        self.model_name = model_name # Nome do modelo
+        self.chroma_client = chromadb.Client() # Cliente em memória (efêmero para cada job)
+        
+        # Configura o modelo Gemini para geração
+        self.model = genai.GenerativeModel(
+            model_name,
+            generation_config={
+                "temperature": 0.2,
+                "response_mime_type": "application/json", # Tipo de resposta
+                "response_schema": JSON_SCHEMA,
+            }
+        )
 
-    # Retorna None se nenhum timestamp for encontrado
-    if not intervalos_encontrados:
-        return None, None
+        # Configura função de embedding customizada com Rate Limit
+        self.embedding_fn = RateLimitedGeminiEmbeddingFunction(
+            api_key=GEMINI_API_KEY,
+            model_name="models/text-embedding-004" # Modelo de embedding mais recente
+        )
 
-    # Usa o primeiro par de timestamps encontrado na resposta
-    inicio_raw, fim_raw = intervalos_encontrados[0]
+    def _chunk_transcription(self, transcription_data: Dict, chunk_size_seconds: int = 60) -> List[Dict]:
+        """
+        Divide a transcrição em chunks baseados em tempo.
+        """
 
-    # Normaliza os timestamps para formato padrão
-    inicio_norm = normalizar_timestamp(inicio_raw)
-    fim_norm = normalizar_timestamp(fim_raw)
+        # Obtem os segmentos da transcrição
+        segments = transcription_data.get("segments", [])
+        if not segments:
+            # Fallback se não houver segmentos detalhados: usa o texto inteiro como um chunk
+            return [{"text": transcription_data.get("text", ""), "start": 0, "end": 0}]
 
-    # Converte para segundos totais
-    inicio_seg = converter_timestamp(inicio_norm)
-    fim_seg = converter_timestamp(fim_norm)
+        # Lista de chunks
+        chunks = []
+        current_chunk = []
+        current_start = segments[0].get("start", 0)
+        current_text_len = 0
+        
+        for seg in segments:
+            start = seg.get("start", 0)
+            end = seg.get("end", 0)
+            text = seg.get("text", "")
+            
+            # Se o chunk atual já passou do tamanho desejado, fecha o chunk
+            if (end - current_start) > chunk_size_seconds and current_chunk:
+                # Junta os segmentos do chunk atual
+                chunk_text = " ".join([s["text"] for s in current_chunk])
+                
+                # Adiciona o chunk à lista de chunks
+                chunks.append({
+                    "text": chunk_text,
+                    "start": current_start,
+                    "end": current_chunk[-1]["end"]
+                })
+                
+                # Inicia um novo chunk
+                current_chunk = []
 
-    # Garantir que início < fim (intervalo válido)
-    if inicio_seg >= fim_seg:
-        return None, None
+                # Atualiza o start do chunk atual
+                current_start = start
+            
+            current_chunk.append(seg)
 
-    return inicio_seg, fim_seg
+        # Adiciona o último chunk
+        if current_chunk:
+            # Junta os segmentos do chunk atual
+            chunk_text = " ".join([s["text"] for s in current_chunk])
+            
+            # Adiciona o chunk à lista de chunks
+            chunks.append({
+                "text": chunk_text,
+                "start": current_start,
+                "end": current_chunk[-1]["end"]
+            })
+            
+        return chunks
 
-# --------------------------------------------------------------------------------------------------------------------------------------
+    def _index_chunks(self, chunks: List[Dict], collection_name: str):
+        """
+        Indexa os chunks no ChromaDB.
+        """
 
-def executar_agente_analista(input_json="data/transcricao_final.json", output_json="data/highlight.json"):
+        # Cria uma coleção no ChromaDB
+        collection = self.chroma_client.get_or_create_collection(
+            name=collection_name, # Nome da coleção
+            embedding_function=self.embedding_fn # Função de embedding
+        )
+
+        # Cria IDs para os chunks
+        ids = [str(i) for i in range(len(chunks))]
+        
+        # Cria documentos para os chunks
+        documents = [c["text"] for c in chunks]
+        
+        # Cria metadados para os chunks
+        metadatas = [{"start": c["start"], "end": c["end"]} for c in chunks]
+        # Filtra documentos vazios para evitar erros ao gerar embeddings
+        filtered_docs = []
+        filtered_meta = []
+        filtered_ids = []
+
+        for i, doc in enumerate(documents):
+            if isinstance(doc, str) and doc.strip():
+                filtered_docs.append(doc)
+                filtered_meta.append(metadatas[i])
+                filtered_ids.append(ids[i])
+            else:
+                logger.warning(f"Chunk {i} vazio. Pulando indexação desse chunk.")
+
+        # Se não houver documentos não vazios, não adiciona nada
+        if not filtered_docs:
+            logger.warning("Nenhum chunk não-vazio para indexar; coleção criada sem registros.")
+            return collection
+
+        # Adiciona os chunks filtrados à coleção
+        collection.add(
+            documents=filtered_docs,
+            metadatas=filtered_meta,
+            ids=filtered_ids
+        )
+        return collection
+
+    def run(self, transcription_path: str) -> Dict:
+        """
+        Executa o pipeline de análise com RAG.
+        """
+        logger.info(f"Iniciando análise RAG para: {transcription_path}")
+
+        # Carregar Transcrição
+        with open(transcription_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        # Chunking
+        chunks = self._chunk_transcription(data)
+        logger.info(f"Transcrição dividida em {len(chunks)} chunks.")
+
+        # Indexação (RAG)
+        collection_name = f"job_{uuid.uuid4().hex}"
+        collection = self._index_chunks(chunks, collection_name)
+        
+        # Retrieval (Busca pelos momentos mais interessantes)
+        # Consultas focadas em diferentes aspectos de viralidade
+        queries = [
+            "momento mais engraçado ou piada",
+            "discussão intensa ou polêmica",
+            "conclusão surpreendente ou plot twist",
+            "informação técnica valiosa ou tutorial",
+            "momento emocionante ou inspirador"
+        ]
+        
+        # Busca pelos momentos mais interessantes
+        retrieved_docs = set()
+        context_chunks = []
+
+        for query in queries:
+            results = collection.query(
+                query_texts=[query],
+                n_results=2 # Pega os top 2 de cada categoria
+            )
+            
+            # Adiciona os chunks mais relevantes ao contexto
+            for i, doc in enumerate(results['documents'][0]):
+                doc_id = results['ids'][0][i] # ID do documento
+                if doc_id not in retrieved_docs:
+                    meta = results['metadatas'][0][i] # Metadados do documento
+                    context_chunks.append({
+                        "text": doc,   # Texto do chunk
+                        "start": meta["start"], # Início do chunk
+                        "end": meta["end"] # Fim do chunk
+                    })
+
+                    # Adiciona o ID do documento ao conjunto de documentos recuperados
+                    retrieved_docs.add(doc_id)
+
+        # Ordena chunks por tempo para manter coerência narrativa no prompt
+        context_chunks.sort(key=lambda x: x["start"])
+        
+        # Montagem do Prompt com Contexto Recuperado
+        context_text = ""
+        for c in context_chunks:
+            context_text += f"[{c['start']:.2f}s - {c['end']:.2f}s]: {c['text']}\n\n"
+
+        prompt = f"""
+                Você é um editor de vídeo especialista em cortes virais (TikTok/Reels/Shorts).
+                Abaixo estão os trechos MAIS RELEVANTES recuperados de um vídeo longo.
+
+                Sua tarefa é selecionar o MELHOR intervalo contínuo para um vídeo curto (entre 30s e 90s).
+
+                TRECHOS RECUPERADOS (Contexto):
+                {context_text}
+
+                CRITÉRIOS:
+                1. O corte deve ter início, meio e fim (faça sentido sozinho).
+                2. Priorize momentos de alto engajamento (humor, polêmica, surpresa).
+                3. O tempo total deve ser idealmente entre 30 e 90 segundos.
+
+                Retorne APENAS o JSON conforme o schema.
+                """
+
+        try:
+            response = self.model.generate_content(prompt) # Geração com LLM
+            result_json = json.loads(response.text) # Resultado da geração
+            
+            # Validação Pydantic
+            validated = AnalystOutput(**result_json)
+            
+            # Pega o melhor highlight (o primeiro ou o com maior score)
+            best_highlight = validated.highlights[0]
+            
+            # Limpa o banco vetorial
+            self.chroma_client.delete_collection(collection_name)
+
+            # Retorna o resultado
+            return {
+                "highlight_inicio_segundos": best_highlight.start,
+                "highlight_fim_segundos": best_highlight.end,
+                "resposta_bruta": best_highlight.summary
+            }
+
+        except Exception as e: # Tratamento de erros
+            logger.error(f"Erro na geração do highlight: {e}")
+            # Fallback seguro: retorna os primeiros 60 segundos se tudo falhar
+            return {
+                "highlight_inicio_segundos": 0,
+                "highlight_fim_segundos": 60,
+                "resposta_bruta": "Fallback: Erro na análise inteligente."
+            }
+
+# -------------------------------------------------------------------------------------------------------------
+
+def executar_agente_analista(input_json: str, output_json: str) -> Dict:
     """
-    Analisa a transcrição de um vídeo e identifica o momento mais relevante usando LLM.
-
-    Args:
-        input_json(str) - Caminho para o arquivo JSON com a transcrição
-        output_json (str) - Caminho para salvar o resultado com os highlights
-
-    Returns:
-        dict - Dicionário contendo os timestamps do highlight e resposta bruta do modelo
-
-    Raises:
-        FileNotFoundError - Se o arquivo de transcrição não for encontrado
-        ValueError - Se a transcrição estiver vazia ou não contiver timestamps válidos
+    Wrapper para manter compatibilidade com o worker existente.
+    Instancia a classe AnalystAgent e executa o fluxo.
     """
-    
-    # Verifica se o arquivo de transcrição existe
-    if not os.path.exists(input_json):
-        raise FileNotFoundError(f"ERRO: arquivo {input_json} não encontrado!")
 
-    # Carrega o arquivo JSON com a transcrição
+    # Carrega o arquivo de transcrição
     with open(input_json, "r", encoding="utf-8") as f:
-        dados_transcricao = json.load(f)
+        data = json.load(f)
+    
+    # Instancia o agente
+    agent = AnalystAgent()
+    
+    # Executa o agente
+    resultado = agent.run(input_json)
+    
+    # Garante que o diretório de saída existe antes de salvar o resultado
+    output_dir = os.path.dirname(output_json)
+    if output_dir:
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+        except Exception as e:
+            logger.warning(f"Não foi possível criar diretório de saída {output_dir}: {e}")
 
-    # Extrai o texto da transcrição do dicionário
-    texto_transcricao = dados_transcricao.get("text", "").strip()
-
-    # Valida se a transcrição não está vazia
-    if not texto_transcricao:
-        raise ValueError("ERRO: O JSON de transcrição não contém campo 'text'!")
-
-
-    prompt = f"""
-                Você é um especialista em análise de conteúdo de vídeo com expertise em identificar momentos-chave e highlights impactantes. 
-                Sua missão é analisar transcrições e localizar o trecho mais relevante do conteúdo.
-
-                Analise a transcrição abaixo e identifique o ÚNICO intervalo temporal mais importante, impactante ou relevante do vídeo.
-
-                # CRITÉRIOS DE SELEÇÃO (em ordem de prioridade):
-                1. **Trecho mais compartilhável** - parte que teria maior engajamento em redes sociais
-                2. **Momento de maior impacto emocional** - pico de emoção, revelação surpreendente ou conclusão poderosa
-                3. **Clímax narrativo** - ápice da história, resolução de conflito ou momento decisivo
-                4. **Ponto crucial informativo** - informação mais valiosa, insight principal ou aprendizado central
-                5. **Resumo natural** - segmento que melhor representa a essência do conteúdo completo
-
-                Você DEVE retornar EXCLUSIVAMENTE no formato: HH:MM:SS - HH:MM:SS
-
-                # REGRAS ESTRITAS:
-                - NUNCA inclua explicações, justificativas ou textos adicionais
-                - NÃO adicione prefixos como "Resposta:" ou "Timestamp:"
-                - NÃO use marcadores, listas ou formatação complexa
-                - USE APENAS o formato HH:MM:SS - HH:MM:SS
-                - GARANTA que o início seja sempre menor que o fim
-                - CONSIDERE intervalos entre 30 segundos e 3 minutos (a menos que o contexto exija diferente)
-
-                # EXEMPLOS VÁLIDOS DE RESPOSTA:
-                00:05:30 - 00:07:45
-                01:15:00 - 01:17:30
-                00:00:00 - 00:02:15
-
-                # EXEMPLOS INVÁLIDOS (NÃO FAÇA):
-                "O momento mais importante é 00:05:30 - 00:07:45 porque..."
-                00:05:30 - 00:07:45
-                Timestamp: 00:05:30-00:07:45
-
-                # TRANSCRIÇÃO PARA ANÁLISE:
-                {texto_transcricao}
-
-                # LEMBRETE FINAL:
-                Retorne SOMENTE o intervalo no formato HH:MM:SS - HH:MM:SS. Qualquer texto adicional invalidará a resposta.
-            """
-
-    # Cria o modelo Gemini
-    model = genai.GenerativeModel("gemini-2.5-flash")
-
-    # Envia o prompt para o modelo Gemini e obtém a resposta
-    resposta = model.generate_content(prompt)
-
-    # Extrai e limpa o texto da resposta
-    texto_resposta = resposta.text.strip()
-
-    # Processa a resposta para extrair os timestamps
-    inicio, fim = extrair_timestamp(texto_resposta)
-
-    # Valida se os timestamps foram extraídos com sucesso
-    if inicio is None or fim is None:
-        raise ValueError(f"ERRO: Não foi possível extrair timestamp da resposta: {texto_resposta}")
-
-    # Salvar resultado
-    resultado = {
-        "resposta_bruta": texto_resposta,
-        "highlight_inicio_segundos": inicio,
-        "highlight_fim_segundos": fim
-    }
-
-    # Salva os resultados em arquivo JSON
+    # Salva o resultado no disco (como o worker espera)
     with open(output_json, "w", encoding="utf-8") as f:
         json.dump(resultado, f, ensure_ascii=False, indent=4)
-
+    
+    # Retorna o resultado
     return resultado
-
-# --------------------------------------------------------------------------------------------------------------------------------------
-
-if __name__ == "__main__":
-
-    # Executa o agente analista com os parâmetros padrão
-    resultado = executar_agente_analista("data/transcricao_final.json")
-
-    # Exibe os resultados para o usuário
-    print("")
-    print("-"*50)
-    print("Resposta do modelo:")
-    print(resultado["resposta_bruta"])
-
-    print("\nInício (segundos):", resultado["highlight_inicio_segundos"])
-    print("Fim (segundos):", resultado["highlight_fim_segundos"])
-    print("-"*50)
-

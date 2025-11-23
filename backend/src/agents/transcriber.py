@@ -1,226 +1,175 @@
 import os # Interage com o Sistema Operacional
-import subprocess # Executa outros programas/comandos do SO
-import whisper # Biblioteca da OpenAI para transcrição de áudio
 import json # Usada para salvar o dicionário da transcrição em formato JSON
-from dotenv import load_dotenv # Acessa as variáveis de ambiente 
-from pathlib import Path # Usada para lidar com caminhos de arquivos 
-import logging # Usada para logging
+from typing import Dict, Any, Optional # Usada para tipar as funções
+import whisper # Biblioteca OpenAI Whisper
+import torch # PyTorch para verificação de GPU
 
-load_dotenv()
+# Variável global para armazenar o modelo carregado (Singleton)
+_whisper_model = None
 
-# Configuração de logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-log = logging.getLogger("transcriber")
+def get_model():
+    """
+    Carrega o modelo Whisper de forma preguiçosa (Lazy Loading).
+    """
+    global _whisper_model
+    if _whisper_model is None:
+        print("Carregando modelo Whisper (base)... isso pode demorar um pouco.")
+        # Usa GPU se disponível, senão CPU
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f"Usando dispositivo: {device}")
+        _whisper_model = whisper.load_model("base", device=device)
+    return _whisper_model
 
 # --------------------------------------------------------------------------------------------------------------------------------------
 
-def download_youtube_video(url: str, output_path: str) -> bool:
+def executar_transcricao_segmento(segment_path: str) -> Optional[Dict[str, Any]]:
     """
-    Baixa o vídeo do Youtube utilizando yt-dlp e salva em output_path (formato mp4).
+    Agente Transcritor adaptado para processar um único segmento de áudio/vídeo usando Whisper.
+    
+    Recebe o caminho de um segmento (chunk) e retorna a transcrição e os metadados.
 
-    Args: 
-        url(str): URL do Youtube
-        output_path(str): Caminho onde o vídeo será salvo
+    Args:
+        segment_path (str): Caminho absoluto ou relativo para o arquivo de segmento (ex: segmento000.mp4).
 
-    Returns: 
-        bool: True se o download foi bem sucedido, False caso contrário
+    Returns:
+        Optional[Dict[str, Any]]: Um dicionário com a transcrição e metadados, ou None em caso de falha.
     """
+
+    print(f"\n-> [Agente Transcritor Stream] Processando segmento: {segment_path}")
+    
+    # Verifica se o arquivo de segmento existe
+    if not os.path.exists(segment_path):
+        print(f"Erro: Arquivo de segmento não encontrado em {segment_path}")
+        return None
+
     try:
-        log.info(f"Iniciando download do vídeo: {url}")
+        # Carrega o modelo
+        model = get_model()
         
-        # Garante que o diretório de saída existe
-        output_dir = os.path.dirname(output_path)
-        if output_dir:
-            os.makedirs(output_dir, exist_ok=True)
-
-        # Executa o comando yt-dlp para baixar o vídeo
-        # Usa opções robustas para contornar bloqueios do YouTube
-        command = [
-            "yt-dlp",
-            "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",  # Formato preferencial
-            "-o", output_path,
-            "--no-playlist",  # Apenas o vídeo, não a playlist
-            "--extractor-args", "youtube:player_client=android",  # Usa cliente Android (mais estável)
-            "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "--referer", "https://www.youtube.com/",
-            "--retries", "10",  # Mais tentativas
-            "--fragment-retries", "10",  # Retry de fragmentos
-            "--ignore-errors",  # Continua mesmo com erros menores
-            url
-        ]
-
-        log.info(f"Executando: {' '.join(command)}")
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=600  # Timeout de 10 minutos
-        )
-
-        # Verifica se o retorno é diferente de 0, que indica erro
-        if result.returncode != 0:
-            log.error(f"Erro ao baixar vídeo: {result.stderr}")
-            log.error(f"Stdout: {result.stdout}")
-            return False
-
-        # Verifica se o arquivo foi criado
-        if not os.path.exists(output_path):
-            log.error(f"Arquivo não foi criado em: {output_path}")
-            return False
-
-        # Verifica o tamanho do arquivo baixado
-        file_size = os.path.getsize(output_path)
-        log.info(f"Download concluído! Arquivo: {output_path} ({file_size / 1024 / 1024:.2f} MB)")
-
-        # Caso o download seja bem sucedido, retorna True
-        return True
-
-    except subprocess.TimeoutExpired:
-        log.error(f"Timeout ao baixar vídeo: {url}")
-        return False
-    except Exception as e:
-        log.exception(f"Erro inesperado ao baixar vídeo: {e}")
-        return False
-
-# --------------------------------------------------------------------------------------------------------------------------------------
-
-def transcricao_whisper(video_path: str, model_size: str = "base") -> dict | None:
-    """
-    Transcreve o áudio de um arquivo de vídeo usando o modelo Whisper.
-
-    Args: 
-        video_path(str): Caminho para o arquivo de vídeo
-        model_size(str): Tamanho do modelo do Whisper ("tiny", "base", "small", "medium", "large")
-
-    Returns: 
-        dict | None: Resultados da transcrição contendo texto, segmentos, etc., ou None em caso de erro
-    """
-    try:
-        # Verifica se o arquivo existe
-        if not os.path.exists(video_path):
-            log.error(f"Arquivo de vídeo não encontrado: {video_path}")
-            return None
-
-        # Carrega o modelo Whisper com o tamanho passado como parâmetro
-        log.info(f"Carregando modelo Whisper: {model_size}")
-        modelo = whisper.load_model(model_size)
-        log.info(f"Modelo {model_size} carregado com sucesso")
-
-        # Realiza a transcrição do áudio do vídeo
-        log.info(f"Iniciando transcrição do vídeo: {video_path}")
-        result = modelo.transcribe(
-            video_path,
-            fp16=False,  
-            temperature=0,
-            condition_on_previous_text=False,
-            verbose=True  # Mostra o progresso da transcrição
-        )
-
-        # Verifica se a transcrição foi concluída com sucesso
-        if result and "text" in result:
-            text_length = len(result["text"]) # Quantidade de caracteres do texto transcrito
-            segments_count = len(result.get("segments", [])) # Quantidade de segmentos
-            log.info(f"Transcrição concluída! Texto: {text_length} caracteres, Segmentos: {segments_count}")
-
-            # Retorna o resultado da transcrição, em um dicionário incluindo texto, segmentos e idioma
-            return result
-        else:
-            log.error("Transcrição retornou resultado vazio ou inválido")
-            # Retorna None se a transcrição falhar 
-            return None
+        # Realiza a transcrição
+        # fp16=False é importante para CPU, mas se tiver GPU pode ser True. 
+        # Vamos manter False por segurança ou verificar device.
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        use_fp16 = (device == "cuda")
+        
+        result = model.transcribe(segment_path, fp16=use_fp16) 
+        text = result["text"].strip()
+        
+        # Extrai o nome do segmento para calcular timestamps relativos (se necessário)
+        segment_name = os.path.basename(segment_path)
+        
+        # Cria um dicionário com a transcrição e metadados
+        transcricao_result = {
+            "text": text,
+            "segment_file": segment_name,
+            # Mantemos compatibilidade com o formato esperado pelo analista
+            # O Whisper retorna segmentos detalhados em result['segments'] se precisarmos
+        }
+        
+        print(f"Texto transcrito ({len(text)} chars): {text[:100]}...") 
+        
+        # Salva a transcrição em um arquivo JSON temporário para persistência
+        output_json_path = segment_path.replace(".mp4", ".json")
+        
+        # Salva o dicionário em um arquivo JSON
+        with open(output_json_path, "w", encoding="utf-8") as f:
+            json.dump(transcricao_result, f, indent=4, ensure_ascii=False)
+            
+        print(f"Transcrição concluída e salva em: {output_json_path}")
+        
+        # Retorna um dicionário com o status e as informações da transcrição
+        return {
+            "status": "sucesso",
+            "transcription_path": output_json_path,
+            "transcription_data": transcricao_result
+        }
 
     except Exception as e:
-        log.exception(f"Erro durante a transcrição: {e}")
-        # Retorna None se ocorrer qualquer tipo de erro durante a transcrição
+        # Retorna um dicionário com o status e a mensagem de erro
+        print(f"Erro inesperado durante a transcrição do segmento {segment_path}: {str(e)}")
         return None
 
 # --------------------------------------------------------------------------------------------------------------------------------------
 
-def transcricao_youtube_video(url: str, temp_video_path: str = "data/temp/temp_video.mp4", model_size: str = "base", output_json_path: str | None = None) -> dict | None:
+def transcricao_youtube_video(url: str, temp_video_path: str, model_size: str = "base", output_json_path: str = None) -> Optional[Dict[str, Any]]:
     """
-    Executa o processo completo: Baixa o vídeo, faz a transcrição e salva o resultado.
-
-
-    Args: 
-        url(str): URL do vídeo no Youtube
-        temp_video_path(str): Caminho para salvar o vídeo baixado temporariamente
-        model_size(str): Tamanho do modelo Whisper a ser usado
-        output_json_path(str | None): Caminho para salvar a transcrição final em JSON
-
-    Returns: 
-        dict | None: Dicionário com o resultado da transcrição ou None em caso de erro
-    """
-    try:
-        log.info(f"Iniciando pipeline de transcrição para: {url}")
-        log.info(f"Modelo: {model_size}, Vídeo temporário: {temp_video_path}")
-
-        # Garante que o diretório para o vídeo temporário exista (cria se não existir)
-        temp_dir = os.path.dirname(temp_video_path)
-        if temp_dir:
-            os.makedirs(temp_dir, exist_ok=True)
-
-        # Baixar o vídeo do Youtube usando yt-dlp
-        log.info("Etapa 1/3: Baixando vídeo do YouTube...")
-        if not download_youtube_video(url, temp_video_path):
-            log.error("Falha no download do vídeo!")
-            return None
-
-        # Transcrever o áudio baixado com o Whisper
-        log.info("Etapa 2/3: Transcrevendo áudio com Whisper...")
-        transcript = transcricao_whisper(temp_video_path, model_size)
+    Baixa um vídeo do YouTube e realiza a transcrição usando Whisper.
+    Esta função é usada pelo transcriber_worker.py para processar vídeos completos do YouTube.
+    
+    Args:
+        url (str): URL do vídeo do YouTube
+        temp_video_path (str): Caminho onde o vídeo será salvo temporariamente
+        model_size (str): Tamanho do modelo Whisper (tiny, base, small, medium, large)
+        output_json_path (str): Caminho onde a transcrição será salva em JSON
         
-        # Caso a transcrição falhe por qualquer motivo
-        if not transcript:
-            log.error("Falha na transcrição!")
+    Returns:
+        Optional[Dict[str, Any]]: Dicionário com a transcrição e metadados, ou None em caso de falha
+    """
+    
+    print(f"\n-> [Agente Transcritor YouTube] Processando vídeo: {url}")
+    
+    try:
+        # Importa yt-dlp para download do vídeo
+        import yt_dlp
+        
+        # Garante que o diretório existe
+        os.makedirs(os.path.dirname(temp_video_path), exist_ok=True)
+        
+        # Configurações do yt-dlp
+        ydl_opts = {
+            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',  # Baixa vídeo + áudio
+            'outtmpl': temp_video_path,
+            'quiet': False,
+            'no_warnings': False,
+            'merge_output_format': 'mp4',  # Garante que o output seja MP4
+        }
+        
+        # Baixa o vídeo
+        print(f"Baixando vídeo do YouTube...")
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+        
+        print(f"Vídeo baixado em: {temp_video_path}")
+        
+        # Verifica se o arquivo foi baixado
+        if not os.path.exists(temp_video_path):
+            print(f"Erro: Arquivo de vídeo não foi criado em {temp_video_path}")
             return None
-
-        # Salvar o resultado em JSON se um caminho foi fornecido
+        
+        # Carrega o modelo Whisper
+        print(f"Carregando modelo Whisper ({model_size})...")
+        model = get_model()
+        
+        # Realiza a transcrição
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        use_fp16 = (device == "cuda")
+        
+        print(f"Transcrevendo vídeo...")
+        result = model.transcribe(temp_video_path, fp16=use_fp16)
+        text = result["text"].strip()
+        
+        # Cria o dicionário de resultado
+        transcricao_result = {
+            "text": text,
+            "url": url,
+            "video_path": temp_video_path,
+            "segments": result.get("segments", [])  # Inclui segmentos detalhados do Whisper
+        }
+        
+        print(f"Texto transcrito ({len(text)} chars): {text[:100]}...")
+        
+        # Salva em JSON se o caminho foi fornecido
         if output_json_path:
-            log.info("Etapa 3/3: Salvando transcrição em JSON...")
-            try:
-                # Garante que o diretório de saída exista
-                output_dir = os.path.dirname(output_json_path)
-                if output_dir:
-                    os.makedirs(output_dir, exist_ok=True)
-
-                # Salva o dicionário completo em formato JSON
-                with open(output_json_path, "w", encoding="utf-8") as jf:
-                    json.dump(transcript, jf, ensure_ascii=False, indent=4)
-
-                # Mensagem de sucesso
-                log.info(f"Transcrição salva em: {output_json_path}")
-            except Exception as e:
-
-                # Caso ocorra algum erro ao salvar os arquivos
-                log.exception(f"Erro ao salvar JSON: {e}")
-                # Continua mesmo se falhar ao salvar, retorna o resultado
-
-        log.info("Pipeline de transcrição concluído com sucesso!")
-        # Retorna o resultado da transcrição
-        return transcript
-
+            os.makedirs(os.path.dirname(output_json_path), exist_ok=True)
+            with open(output_json_path, "w", encoding="utf-8") as f:
+                json.dump(transcricao_result, f, indent=4, ensure_ascii=False)
+            print(f"Transcrição salva em: {output_json_path}")
+        
+        return transcricao_result
+        
     except Exception as e:
-        log.exception(f"Erro inesperado no pipeline de transcrição: {e}")
+        print(f"Erro durante download/transcrição do YouTube: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return None
 
-# --------------------------------------------------------------------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    # Exemplo de uso - teste interativo do módulo
-    youtube_url = input("Cole a URL do vídeo do YouTube: ")
-    output_json_path = "data/temp/transcricao_final.json"
-
-    output_json_path = "data/transcricao_final.json"
-
-    # Executa o pipeline completo de transcrição
-    transcript = transcricao_youtube_video(
-        youtube_url,
-        model_size="base",
-        output_json_path=output_json_path
-    )
-
-    if transcript:
-        print("\nTranscrição concluída!")
-        print(f"Texto: {transcript['text'][:200]}...")  # Primeiros 200 caracteres
-    else:
-        print("Falha na transcrição.")

@@ -221,7 +221,6 @@ def consume(queue: str, handler: Callable[[Dict[str, Any]], None]):
         """
         Função chamada automaticamente quando uma mensagem chega na fila.
         """
-
         try:
             try:
                 # Desserializa o JSON
@@ -232,7 +231,10 @@ def consume(queue: str, handler: Callable[[Dict[str, Any]], None]):
                 ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
                 return
 
-            # Execução da lógica do worker
+            # Executa o handler
+            handler(msg)
+            
+            # Envia ACK
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
         except Exception as e:
