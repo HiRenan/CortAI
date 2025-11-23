@@ -6,6 +6,7 @@ Consome jobs da fila 'edit_queue' e publica resultados em 'completed_queue'.
 import os # Importa o módulo os
 import json # Importa o módulo json
 import logging # Importa o módulo logging
+import time # Usado para retry/backoff quando o arquivo de vídeo ainda não existir
 from src.services.state_manager import update_job_state, JobStatus # Importa as classes update_job_state e JobStatus
 
 # Importa as funções consume, publish, new_job, EDIT_QUEUE e COMPLETED_QUEUE do módulo messaging_rabbit
@@ -56,17 +57,103 @@ def handle_editor(message: dict):
     os.makedirs(os.path.dirname(output_video_path), exist_ok=True)
 
     try:
-        # Executa o agente editor
-        result_path = executar_agente_editor(
-            highlight_json=highlight_path,
-            input_video=video_path,
-            output_video=output_video_path
-        )
+        # --- Short-term mitigation: esperar pelo arquivo de vídeo se ele ainda não existir ---
+        MAX_VIDEO_WAIT_RETRIES = 5
+        VIDEO_WAIT_DELAY = 2  # segundos
+
+        if not os.path.exists(video_path):
+            log.warning(f"[{job_id}] video_path não encontrado: {video_path}. Aguardando até {MAX_VIDEO_WAIT_RETRIES*VIDEO_WAIT_DELAY}s...")
+            for attempt in range(1, MAX_VIDEO_WAIT_RETRIES + 1):
+                if os.path.exists(video_path):
+                    log.info(f"[{job_id}] video_path encontrado na tentativa {attempt}.")
+                    break
+                log.info(f"[{job_id}] Tentativa {attempt}/{MAX_VIDEO_WAIT_RETRIES}: aguardando {VIDEO_WAIT_DELAY}s para o arquivo aparecer...")
+                time.sleep(VIDEO_WAIT_DELAY)
+
+        if not os.path.exists(video_path):
+            log.error(f"[{job_id}] video_path ainda não encontrado após tentativas: {video_path}")
+            update_job_state(job_id, JobStatus.FAILED, "edit_missing_input")
+            return
+
+        # Prepara o highlight JSON no formato esperado pelo editor
+        # O Analyst pode retornar um JSON simples com chaves: highlight_inicio_segundos, highlight_fim_segundos, resposta_bruta
+        # O executar_agente_editor espera {'highlights': [{ 'start':..., 'end':..., 'summary':..., 'score':... }, ...]}
+        try:
+            with open(highlight_path, 'r', encoding='utf-8') as hf:
+                highlight_data = json.load(hf)
+        except Exception as e:
+            log.exception(f"[{job_id}] Falha ao ler highlight_path {highlight_path}: {e}")
+            update_job_state(job_id, JobStatus.FAILED, "edit_critical_error")
+            return
+
+        # Normaliza para o formato do editor
+        converted = None
+        if isinstance(highlight_data, dict) and "highlights" in highlight_data:
+            converted = highlight_data
+        elif isinstance(highlight_data, list):
+            converted = {"highlights": highlight_data}
+        elif isinstance(highlight_data, dict) and all(k in highlight_data for k in ["highlight_inicio_segundos", "highlight_fim_segundos"]):
+            start = float(highlight_data.get("highlight_inicio_segundos", 0))
+            end = float(highlight_data.get("highlight_fim_segundos", 60))
+            summary = highlight_data.get("resposta_bruta", "")
+            converted = {"highlights": [{"start": start, "end": end, "summary": summary, "score": 0}]}
+        else:
+            log.error(f"[{job_id}] Formato de highlight desconhecido: {type(highlight_data)}")
+            update_job_state(job_id, JobStatus.FAILED, "edit_critical_error")
+            return
+
+        # Escreve JSON convertido em arquivo temporário dentro do diretório do job
+        output_dir = os.path.dirname(output_video_path)
+        os.makedirs(output_dir, exist_ok=True)
+        converted_highlight_path = os.path.join(output_dir, "highlight.json")
+        try:
+            with open(converted_highlight_path, 'w', encoding='utf-8') as cf:
+                json.dump(converted, cf, ensure_ascii=False, indent=4)
+        except Exception as e:
+            log.exception(f"[{job_id}] Falha ao escrever highlight convertido: {e}")
+            update_job_state(job_id, JobStatus.FAILED, "edit_critical_error")
+            return
+
+        # Executa o agente editor (usa output_dir e recebe lista de clips)
+        try:
+            result_paths = executar_agente_editor(
+                highlight_json=converted_highlight_path,
+                input_video=video_path,
+                output_dir=output_dir
+            )
+        except FileNotFoundError as fnf:
+            # Se o arquivo sumiu entre a verificação e a execução, tenta novamente uma vez
+            log.warning(f"[{job_id}] FileNotFoundError durante execução do editor: {fnf}. Tentando aguardar/reenviar...")
+            time.sleep(VIDEO_WAIT_DELAY)
+            if not os.path.exists(video_path):
+                log.error(f"[{job_id}] video_path ainda ausente após espera: {video_path}")
+                update_job_state(job_id, JobStatus.FAILED, "edit_missing_input")
+                return
+            # segunda tentativa
+            try:
+                result_paths = executar_agente_editor(
+                    highlight_json=converted_highlight_path,
+                    input_video=video_path,
+                    output_dir=output_dir
+                )
+            except Exception as e:
+                log.exception(f"[{job_id}] Falha na segunda tentativa do editor: {e}")
+                update_job_state(job_id, JobStatus.FAILED, "edit_critical_error")
+                return
+
+        # Normaliza o resultado para um único caminho (first clip)
+        result_path = None
+        if isinstance(result_paths, list) and result_paths:
+            result_path = result_paths[0]
+        elif isinstance(result_paths, str):
+            result_path = result_paths
+        else:
+            result_path = None
     except Exception as e:
-        # Registra o erro
+        # Registra o erro e marca falha crítica sem levantar exceção para não interromper o loop de consumo
         log.exception(f"[{job_id}] Erro crítico durante edição: {e}")
         update_job_state(job_id, JobStatus.FAILED, "edit_critical_error")
-        raise
+        return
 
     # Se a edição falhar
     if not result_path:
