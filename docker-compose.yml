@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database
   postgres:
@@ -17,7 +15,7 @@ services:
     networks:
       - cortai-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cortai"]
+      test: [ "CMD-SHELL", "pg_isready -U cortai" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -33,7 +31,27 @@ services:
     networks:
       - cortai-network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: cortai-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: cortai
+      RABBITMQ_DEFAULT_PASS: cortai_password
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - cortai-network
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -44,19 +62,27 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: cortai-backend
+    stdin_open: true # docker run -i
+    tty: true        # docker run -t
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
-      - ./storage:/app/storage
+      # ./storage:/app/storage
+      - ./backend/data:/app/data
     environment:
-      - DATABASE_URL=postgresql://cortai:cortai_password@postgres:5432/cortai
+      - DATABASE_URL=postgresql+asyncpg://cortai:cortai_password@postgres:5432/cortai
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
+      - RABBITMQ_URL=amqp://cortai:cortai_password@rabbitmq:5672/
+      - FFMPEG_PATH=ffmpeg
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     networks:
       - cortai-network
@@ -71,16 +97,117 @@ services:
     volumes:
       - ./backend:/app
       - ./storage:/app/storage
+      - ./backend/data:/app/data
     environment:
-      - DATABASE_URL=postgresql://cortai:cortai_password@postgres:5432/cortai
+      - DATABASE_URL=postgresql+asyncpg://cortai:cortai_password@postgres:5432/cortai
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
+      - RABBITMQ_URL=amqp://cortai:cortai_password@rabbitmq:5672/
+      - FFMPEG_PATH=ffmpeg
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
     depends_on:
       - redis
       - postgres
+      - rabbitmq
     networks:
       - cortai-network
     command: celery -A src.core.celery_app worker --loglevel=info
+
+  # Transcriber Worker (RabbitMQ)
+  transcriber-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cortai-transcriber
+    volumes:
+      - ./backend:/app
+      - ./storage:/app/storage
+      - ./backend/data:/app/data
+    environment:
+      - DATABASE_URL=postgresql://cortai:cortai_password@postgres:5432/cortai
+      - REDIS_URL=redis://redis:6379/0
+      - RABBITMQ_URL=amqp://cortai:cortai_password@rabbitmq:5672/
+      - FFMPEG_PATH=ffmpeg
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    depends_on:
+      - redis
+      - postgres
+      - rabbitmq
+    networks:
+      - cortai-network
+    command: python -m src.workers.transcriber_worker
+
+  # Analyst Worker (RabbitMQ)
+  analyst-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cortai-analyst
+    volumes:
+      - ./backend:/app
+      - ./storage:/app/storage
+      - ./backend/data:/app/data
+    environment:
+      - DATABASE_URL=postgresql://cortai:cortai_password@postgres:5432/cortai
+      - REDIS_URL=redis://redis:6379/0
+      - RABBITMQ_URL=amqp://cortai:cortai_password@rabbitmq:5672/
+      - FFMPEG_PATH=ffmpeg
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    depends_on:
+      - redis
+      - postgres
+      - rabbitmq
+    networks:
+      - cortai-network
+    command: python -m src.workers.analyst_worker
+
+  # Editor Worker (RabbitMQ)
+  editor-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cortai-editor
+    volumes:
+      - ./backend:/app
+      - ./storage:/app/storage
+      - ./backend/data:/app/data
+    environment:
+      - DATABASE_URL=postgresql://cortai:cortai_password@postgres:5432/cortai
+      - REDIS_URL=redis://redis:6379/0
+      - RABBITMQ_URL=amqp://cortai:cortai_password@rabbitmq:5672/
+      - FFMPEG_PATH=ffmpeg
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    depends_on:
+      - redis
+      - postgres
+      - rabbitmq
+    networks:
+      - cortai-network
+    command: python -m src.workers.editor_worker
+
+  # Collector Worker (RabbitMQ)
+  collector-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cortai-collector
+    volumes:
+      - ./backend:/app
+      - ./storage:/app/storage
+      - ./backend/data:/app/data
+    environment:
+      - DATABASE_URL=postgresql://cortai:cortai_password@postgres:5432/cortai
+      - REDIS_URL=redis://redis:6379/0
+      - RABBITMQ_URL=amqp://cortai:cortai_password@rabbitmq:5672/
+      - FFMPEG_PATH=ffmpeg
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    depends_on:
+      - redis
+      - postgres
+      - rabbitmq
+    networks:
+      - cortai-network
+    command: python -m src.workers.collector_worker
 
   # Frontend
   frontend:
@@ -100,7 +227,6 @@ services:
     networks:
       - cortai-network
     command: npm run dev -- --host
-
   # Nginx (optional - for production)
   # nginx:
   #   image: nginx:alpine
@@ -124,3 +250,4 @@ networks:
 volumes:
   postgres_data:
   redis_data:
+  rabbitmq_data:

@@ -45,6 +45,13 @@ data/
 *.webm
 transcriptions/
 
+# Binaries / External Tools (FFmpeg)
+ffmpeg.exe
+ffprobe.exe
+ffplay.exe
+ffmpeg
+ffprobe
+
 # Logs and temporary files
 logs/
 *.log
@@ -63,6 +70,10 @@ migrations/versions/*.py
 .vscode/
 .idea/
 *.swp
+.cursorrules
+CLAUDE.md 
+AGENTS.md
+.claude/
 *.swo
 *~
 .project

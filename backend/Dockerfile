@@ -6,13 +6,19 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     git \
+    && pip install --no-cache-dir yt-dlp \
     && rm -rf /var/lib/apt/lists/*
+
+# Install CPU-only PyTorch first to avoid downloading huge CUDA wheels
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
 # Copy requirements
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install other dependencies
+# Remove torch and torchvision from requirements.txt to prevent reinstalling CUDA versions
+RUN sed -i '/^torch/d' requirements.txt && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
