@@ -88,7 +88,7 @@ def get_subtitle_style_youtube() -> str:
 
     Style characteristics:
     - Font: Arial (fallback to Sans)
-    - Size: 24pt (readable on mobile)
+    - Size: 18pt (readable on mobile)
     - Color: White text with black outline
     - Background: Semi-transparent black box
     - Position: Bottom center with margin
@@ -98,10 +98,10 @@ def get_subtitle_style_youtube() -> str:
     """
     return (
         "FontName=Arial,"
-        "FontSize=24,"
+        "FontSize=18,"
         "PrimaryColour=&HFFFFFF,"      # White text
         "OutlineColour=&H000000,"      # Black outline
-        "Outline=2,"                   # 2px outline thickness
+        "Outline=1,"                   # 1px outline thickness
         "BackColour=&H80000000,"       # Semi-transparent black background
         "BorderStyle=3,"               # Box background style
         "Alignment=2,"                 # Bottom center alignment

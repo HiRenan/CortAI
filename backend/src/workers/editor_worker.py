@@ -50,17 +50,17 @@ def handle_editor(message: dict):
     update_job_state(job_id, JobStatus.PROCESSING, "edit", {"highlight_path": highlight_path})
 
     # Cria o diretório para o vídeo editado (organizado por job_id)
-    output_video_path = f"/app/data/jobs/{job_id}/highlights/{job_id}_highlight.mp4"
+    output_dir = f"/app/data/jobs/{job_id}/highlights"
 
     # Garante que o diretório existe
-    os.makedirs(os.path.dirname(output_video_path), exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     try:
         # Executa o agente editor
         result_path = executar_agente_editor(
             highlight_json=highlight_path,
             input_video=video_path,
-            output_video=output_video_path
+            output_dir=output_dir
         )
     except Exception as e:
         # Registra o erro
@@ -68,20 +68,29 @@ def handle_editor(message: dict):
         update_job_state(job_id, JobStatus.FAILED, "edit_critical_error")
         raise
 
+    # Normaliza retorno para lista e primeiro clip
+    if isinstance(result_path, list):
+        clips_paths = result_path
+        final_path = result_path[0] if result_path else None
+    else:
+        final_path = result_path
+        clips_paths = [result_path] if result_path else []
+
     # Se a edição falhar
-    if not result_path:
+    if not final_path:
         print(f"[ERRO] Falha ao editar o vídeo no job {job_id}.")
         # Atualiza o estado do job
         update_job_state(job_id, JobStatus.FAILED, "edit_failed")
         return # Retorna para o loop
 
-    print(f"[OK] Highlight gerado em: {result_path}")
+    print(f"[OK] Highlight gerado em: {final_path}")
 
     # Cria o payload para a próxima etapa
     completed_payload = {
-        "final_video_path": result_path,
+        "final_video_path": final_path,
         "original_video_path": video_path,
-        "highlight_json_path": highlight_path
+        "highlight_json_path": highlight_path,
+        "clips_paths": clips_paths
     }
 
     # Cria a mensagem para a próxima etapa
