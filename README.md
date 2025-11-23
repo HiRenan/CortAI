@@ -22,85 +22,75 @@ CortAI é uma plataforma projetada para **automatizar a análise, corte e public
 - 📊 **Dashboard** para gerenciar vídeos e clipes
 - ⚡ **Processamento assíncrono** com filas para alta performance
 
-## 🏗️ Arquitetura
+## 🏗️ Estrutura do Projeto
 
 ```
 CortAI/
-├── backend/          # API FastAPI + Agentes de IA
-├── frontend/         # Interface React + Vite
-├── shared/           # Tipos e schemas compartilhados
+├── backend/          # API FastAPI + Celery + LangGraph + agentes (transcriber, analyst, editor)
+├── frontend/         # UI React + Vite + Tailwind + Zustand
 ├── infra/            # Configurações de infraestrutura
-├── storage/          # Armazenamento de mídia (git ignored)
-├── docs/             # Documentação completa
-└── scripts/          # Scripts utilitários
+├── storage/          # Armazenamento de mídia (gitignored)
+├── data/             # Artefatos intermediários (gitignored; montado no container)
+├── docs/             # Documentação
+└── docker-compose.yml
 ```
 
 ### Stack Tecnológica
 
-**Backend:**
-- FastAPI (Python) - API REST moderna e async
-- PostgreSQL - Banco de dados relacional
-- Redis - Cache e filas de processamento
-- Celery - Processamento de tarefas assíncronas
-- OpenAI Whisper - Transcrição de áudio
-- FFmpeg - Processamento de vídeo
+**Backend**
+- FastAPI (Python 3.11)
+- PostgreSQL (metadados)
+- Redis + Celery (tasks async)
+- LangGraph (orquestração)
+- Whisper (transcrição)
+- Gemini (análise) – exige `GOOGLE_API_KEY`
+- FFmpeg (corte)
 
-**Frontend:**
-- React 18 - Framework UI
-- Vite - Build tool ultra-rápido
-- Tailwind CSS - Estilização
-- Zustand - Gerenciamento de estado
+**Frontend**
+- React 18, Vite, Tailwind, Zustand
 
-**Infraestrutura:**
-- Docker & Docker Compose - Containerização
-- Nginx - Proxy reverso (produção)
+**Infra**
+- Docker & Docker Compose
 
-## 🚀 Quick Start
-
-### Usando Docker (Recomendado)
+## 🚀 Quick Start (Docker)
 
 ```bash
-# Clone o repositório
+# Clone
 git clone <repository-url>
 cd CortAI
 
-# Configure as variáveis de ambiente
+# Configurar .env
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
+# preencha GOOGLE_API_KEY e ajuste DATABASE_URL/REDIS_URL/FFMPEG_PATH se necessário
 
-# Inicie todos os serviços
-docker-compose up -d
+# Subir serviços
+docker-compose up -d --build
 
-# Acesse a aplicação
+# Rodar migrações (obrigatório)
+docker-compose run --rm backend alembic upgrade head
+
+# Acessos
 # Frontend: http://localhost:5173
-# Backend API: http://localhost:8000
-# API Docs: http://localhost:8000/docs
+# Backend:  http://localhost:8000
+# Swagger:  http://localhost:8000/docs
 ```
 
-### Instalação Manual
-
-Veja o guia completo em [docs/SETUP.md](docs/SETUP.md)
+Instalação manual em [docs/SETUP.md](docs/SETUP.md).
 
 ## 📚 Documentação
 
-- [Guia de Configuração](docs/SETUP.md) - Instruções detalhadas de instalação
-- [Arquitetura](docs/ARCHITECTURE.md) - Visão técnica da arquitetura
-- [API Documentation](http://localhost:8000/docs) - Swagger UI interativo
-- [Agents README](backend/src/agents/README.md) - Documentação dos agentes de IA
+- [Guia de Configuração](docs/SETUP.md)
+- [Arquitetura](docs/ARCHITECTURE.md)
+- [Swagger](http://localhost:8000/docs) – API real
+- [Agents README](backend/src/agents/README.md)
 
-## 🤖 Agentes Inteligentes
+## 🤖 Agentes
 
-### 1. Transcriber Agent ✅
-Baixa vídeos e transcreve áudio usando Whisper
-
-### 2. Analyst Agent 🚧
-Analisa conteúdo e identifica momentos de destaque
-
-### 3. Editor Agent 🚧
-Gera clipes otimizados automaticamente
-
-### 4. Publisher Agent 📋
-Publica clipes nas redes sociais (planejado)
+- Transcriber: download + Whisper
+- Analyst: highlights (Gemini, RAG)
+- Editor: corte FFmpeg, SRT/VTT/thumbnail
+- Publisher: planejado
 
 ## 🛠️ Desenvolvimento
 
@@ -108,8 +98,9 @@ Publica clipes nas redes sociais (planejado)
 # Backend
 cd backend
 python -m venv venv
-source venv/bin/activate
+source venv/bin/activate  # ou venv\Scripts\activate
 pip install -r requirements.txt
+alembic upgrade head
 uvicorn src.main:app --reload
 
 # Frontend
@@ -118,28 +109,28 @@ npm install
 npm run dev
 
 # Testes
-pytest                    # Backend
-npm test                  # Frontend
+pytest
+npm test
 ```
 
-## 📊 Status do Projeto
+## 📊 Status
 
-| Componente | Status |
-|------------|--------|
-| Transcriber Agent | ✅ Implementado |
-| Analyst Agent | 🚧 Em desenvolvimento |
-| Editor Agent | 🚧 Em desenvolvimento |
-| Backend API | 🚧 Em desenvolvimento |
-| Frontend | 🚧 Em desenvolvimento |
-| Docker Setup | ✅ Configurado |
+| Componente       | Status                  |
+|------------------|-------------------------|
+| Transcriber      | ✅ Em uso               |
+| Analyst          | ✅ Em uso (Gemini)      |
+| Editor           | ✅ Em uso               |
+| Backend API      | ✅ Em uso (/videos)     |
+| Frontend         | ✅ Dashboard/Biblioteca |
+| Docker Setup     | ✅ Configurado          |
 
 ## 📄 Licença
 
-Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
+MIT. Veja [LICENSE](LICENSE).
 
 ## 👥 Autores
 
-Desenvolvido com ❤️ pela equipe CortAI
+Equipe CortAI
 
 ---
 

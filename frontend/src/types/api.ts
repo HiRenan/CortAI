@@ -53,6 +53,9 @@ export interface VideoCreateRequest {
   max_highlights?: number
   include_subtitles?: boolean
   subtitle_style?: string
+  use_stream_collector?: boolean
+  stream_segment_duration?: number
+  stream_max_duration?: number
 }
 
 export interface VideoListResponse {
