@@ -2,6 +2,9 @@ import os # Interage com Sistema Operacional
 import subprocess # Executa outros programas/comandos do SO
 import json # Faz a leitura/escrita em objetos do tipo JSON
 
+# Duração mínima de fallback (segundos) quando um highlight tem fim <= início
+DEFAULT_FALLBACK_SECONDS = 5
+
 # --------------------------------------------------------------------------------------------------------------------------------------
 
 def cortar_video_ffmpeg(input_video, inicio, fim, output_video="data/highlight.mp4", remover_original=False):
@@ -139,8 +142,10 @@ def executar_agente_editor(highlight_json="data/highlight.json", input_video="da
             score = highlight.get("score", highlight.get("pontuacao", 0))
 
             if inicio >= fim:
-                print(f"  [AVISO] Highlight {idx} ignorado: timestamps inválidos ({inicio}s >= {fim}s)")
-                continue
+                # Aplica fallback seguro: define fim = inicio + DEFAULT_FALLBACK_SECONDS
+                old_inicio, old_fim = inicio, fim
+                fim = inicio + DEFAULT_FALLBACK_SECONDS
+                print(f"  [AVISO] Highlight {idx} com timestamps inválidos ({old_inicio}s >= {old_fim}s). Aplicando fallback: fim={fim}s (+{DEFAULT_FALLBACK_SECONDS}s).")
 
             # Gera nome do arquivo de saída
             duracao = fim - inicio

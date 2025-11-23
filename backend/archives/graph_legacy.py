@@ -1,15 +1,28 @@
-# Módulo arquivado: `src/core/graph.py`
-#
-# Esta implementação foi movida para `backend/archives/graph_legacy.py` durante
-# uma rotina de limpeza do repositório. O grafo ativo usado pelo sistema é
-# `src.graphs.main_graph` — mantenha esta referência caso precise restaurar o
-# código antigo para análise/recuperação.
-#
-# Para evitar importações acidentais deste módulo, lançamos um erro claro.
-raise RuntimeError(
-    "Módulo legado `src.core.graph` arquivado. Use `src.graphs.main_graph` ou "
-    "recupere `backend/archives/graph_legacy.py` se necessário."
-)
+# Importa os agentes especializados para cada etapa do processo
+# CORRIGIDO: Imports relativos para funcionar dentro do pacote backend
+from src.agents.transcriber import transcricao_youtube_video
+from src.agents.analyst import AnalystAgent  # Novo agente com JSON/Pydantic
+from src.agents.editor import executar_agente_editor
+
+# Importa progress tracking
+from src.core.progress import update_progress
+
+# Importa configurações centralizadas
+from src.core.config import DATA_DIR
+
+# Importa funções de chunking
+from src.utils.chunking import should_use_chunking
+
+# Importa a estrutura principal do grafo (StateGraph) e o marcador de fim de fluxo (END)
+from langgraph.graph import StateGraph, END
+
+# Importa tipos para tipagem estática
+from typing import TypedDict, Optional, Dict, Any
+from pathlib import Path
+import os
+
+# Necessário para salvar o arquivo de cortes
+import json
 
 
 # ----------------------------------------------------------------------

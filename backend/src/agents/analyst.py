@@ -291,34 +291,63 @@ class AnalystAgent:
             "informação técnica valiosa ou tutorial",
             "momento emocionante ou inspirador"
         ]
-        
+
         # Busca pelos momentos mais interessantes
         retrieved_docs = set()
         context_chunks = []
 
         for query in queries:
-            results = collection.query(
-                query_texts=[query],
-                n_results=2 # Pega os top 2 de cada categoria
-            )
-            
-            # Adiciona os chunks mais relevantes ao contexto
-            for i, doc in enumerate(results['documents'][0]):
-                doc_id = results['ids'][0][i] # ID do documento
+            try:
+                results = collection.query(
+                    query_texts=[query],
+                    n_results=2 # Pega os top 2 de cada categoria
+                )
+            except Exception as e:
+                logger.warning(f"Erro na query do ChromaDB para '{query}': {e}")
+                continue
+
+            # Valida estrutura retornada para evitar IndexError
+            docs_outer = results.get('documents') if isinstance(results, dict) else None
+            ids_outer = results.get('ids') if isinstance(results, dict) else None
+            metas_outer = results.get('metadatas') if isinstance(results, dict) else None
+
+            if not docs_outer or not isinstance(docs_outer, list) or not docs_outer[0]:
+                logger.debug(f"Nenhum documento recuperado para a query: '{query}'")
+                continue
+
+            # Adiciona os chunks mais relevantes ao contexto (com proteção contra índices inválidos)
+            for i, doc in enumerate(docs_outer[0]):
+                try:
+                    doc_id = ids_outer[0][i]
+                    meta = metas_outer[0][i]
+                except Exception:
+                    logger.debug(f"Ignorando resultado inconsistente na query '{query}' index {i}")
+                    continue
+
                 if doc_id not in retrieved_docs:
-                    meta = results['metadatas'][0][i] # Metadados do documento
                     context_chunks.append({
                         "text": doc,   # Texto do chunk
-                        "start": meta["start"], # Início do chunk
-                        "end": meta["end"] # Fim do chunk
+                        "start": meta.get("start", 0), # Início do chunk
+                        "end": meta.get("end", 0) # Fim do chunk
                     })
-
-                    # Adiciona o ID do documento ao conjunto de documentos recuperados
                     retrieved_docs.add(doc_id)
 
         # Ordena chunks por tempo para manter coerência narrativa no prompt
-        context_chunks.sort(key=lambda x: x["start"])
-        
+        context_chunks.sort(key=lambda x: x["start"]) if context_chunks else None
+
+        # Se não houver contexto recuperado, retorna fallback sem chamar o LLM
+        if not context_chunks:
+            logger.warning("Nenhum chunk recuperado para composição de prompt; retornando fallback.")
+            try:
+                self.chroma_client.delete_collection(collection_name)
+            except Exception:
+                pass
+            return {
+                "highlight_inicio_segundos": 0,
+                "highlight_fim_segundos": 60,
+                "resposta_bruta": "Fallback: transcrição vazia ou sem conteúdo recuperável."
+            }
+
         # Montagem do Prompt com Contexto Recuperado
         context_text = ""
         for c in context_chunks:
@@ -344,13 +373,26 @@ class AnalystAgent:
         try:
             response = self.model.generate_content(prompt) # Geração com LLM
             result_json = json.loads(response.text) # Resultado da geração
-            
+
             # Validação Pydantic
             validated = AnalystOutput(**result_json)
-            
+
+            # Se o LLM não retornar highlights, trata como fallback
+            if not validated.highlights:
+                logger.warning("LLM retornou estrutura vazia de highlights; retornando fallback.")
+                try:
+                    self.chroma_client.delete_collection(collection_name)
+                except Exception:
+                    pass
+                return {
+                    "highlight_inicio_segundos": 0,
+                    "highlight_fim_segundos": 60,
+                    "resposta_bruta": "Fallback: LLM não retornou highlights válidos."
+                }
+
             # Pega o melhor highlight (o primeiro ou o com maior score)
             best_highlight = validated.highlights[0]
-            
+
             # Limpa o banco vetorial
             self.chroma_client.delete_collection(collection_name)
 
@@ -361,14 +403,21 @@ class AnalystAgent:
                 "resposta_bruta": best_highlight.summary
             }
 
+        except ValidationError as ve:
+            logger.error(f"Validação Pydantic falhou: {ve}")
         except Exception as e: # Tratamento de erros
             logger.error(f"Erro na geração do highlight: {e}")
-            # Fallback seguro: retorna os primeiros 60 segundos se tudo falhar
-            return {
-                "highlight_inicio_segundos": 0,
-                "highlight_fim_segundos": 60,
-                "resposta_bruta": "Fallback: Erro na análise inteligente."
-            }
+
+        # Fallback seguro padrão
+        try:
+            self.chroma_client.delete_collection(collection_name)
+        except Exception:
+            pass
+        return {
+            "highlight_inicio_segundos": 0,
+            "highlight_fim_segundos": 60,
+            "resposta_bruta": "Fallback: Erro na análise inteligente."
+        }
 
 # -------------------------------------------------------------------------------------------------------------
 
