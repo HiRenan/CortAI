@@ -1,81 +1,115 @@
-import os  # Interage com o sistema operacional
-import json  # Leitura/escrita de JSON
-import logging  # Para logs detalhados
-from dotenv import load_dotenv  # Carrega variáveis de ambiente do arquivo .env
-import google.generativeai as genai  # Cliente oficial para acessar os modelos Gemini
-from pydantic import BaseModel, ValidationError  # Validação rigorosa de dados estruturados
-from typing import List, Optional, Dict, Any
+import os # Interage com o Sistema Operacional
+import json # Manipulação de arquivos JSON
+import logging # Registro de logs
+import shutil # Copia e move arquivos
+import uuid # Geração de identificadores únicos
+from typing import List, Optional, Dict, Any # Tipagem estática
+from dotenv import load_dotenv # Carrega variáveis de ambiente
+import google.generativeai as genai # Importa o modelo de linguagem do Google (Gemini)
+from pydantic import BaseModel, ValidationError #
+import time # Controle de tempo
+import chromadb # Banco de Dados Vetorial
+from chromadb.utils import embedding_functions # Função de embedding
 
-# Função auxiliar para chamadas seguras ao LLM
-from src.utils.safe_api import safe_llm_call
-# Funções para chunking de transcrições longas
-from src.utils.chunking import (
-    create_chunks_from_segments,
-    get_chunk_text,
-    get_chunk_time_range
-)
+# Configuração de logs
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("analyst_agent")
 
-log = logging.getLogger("analyst")
-
-
-# CONFIGURAÇÃO DO AMBIENTE E DA API GEMINI
-
-# Carrega as variáveis do arquivo .env
+# Carrega variáveis de ambiente e obtem a chave de API do Gemini
 load_dotenv()
-
-# Obtém a API key do Gemini
 GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-# Caso a chave não exista, lança erro imediatamente
 if not GEMINI_API_KEY:
-    raise ValueError("ERRO: variável GOOGLE_API_KEY não encontrada no arquivo .env!")
+    raise ValueError("ERRO: variável GOOGLE_API_KEY não encontrada no .env!")
 
-# Configura o cliente Gemini com a API key obtida
+# Configura o modelo com a chave de API
 genai.configure(api_key=GEMINI_API_KEY)
 
-# Configuração de tokens (pode ser sobrescrita via variável de ambiente)
-MAX_OUTPUT_TOKENS = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "8192"))
-
-# Safety settings para evitar bloqueios desnecessários em análises legítimas de vídeo
-SAFETY_SETTINGS = [
-    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-]
-
-
-# DEFINIÇÃO DO MODELO DA RESPOSTA (PYDANTIC)
+# -----------------------------------------------------------------------------------------------------------------
 
 class Highlight(BaseModel):
     """
-    Estrutura de um único highlight gerado pelo modelo.
-
-    Attributes:
-        start (float): Tempo inicial em segundos.
-        end (float): Tempo final em segundos.
-        summary (Optional[str]): Descrição opcional do trecho.
-        score (Optional[float]): Relevância opcional atribuída pelo modelo.
+    Estrutura de um highlight identificado.
     """
     start: float
     end: float
-    summary: Optional[str] = None
-    score: Optional[float] = None
+    summary: str # Resumo do highlight
+    score: float # Score do highlight
 
+# -----------------------------------------------------------------------------------------------------------------
+
+class RateLimitedGeminiEmbeddingFunction(embedding_functions.EmbeddingFunction):
+    """
+    Função de embedding customizada para o Gemini com Rate Limiting.
+    O plano gratuito permite apenas 15 RPM (Requisições Por Minuto).
+    Esta classe garante um intervalo seguro entre as chamadas.
+    """
+    def __init__(self, api_key: str, model_name: str = "models/text-embedding-004"):
+        self.api_key = api_key
+        self.model_name = model_name
+        genai.configure(api_key=api_key)
+
+    def __call__(self, input: List[str]) -> List[List[float]]:
+        embeddings = []
+        total = len(input)
+        
+        for i, text in enumerate(input):
+            logger.info(f"Gerando embedding {i+1}/{total}...")
+            retry_count = 0
+            
+            while True:
+                try:
+                    # Substitui textos vazios por placeholder para evitar erro da API
+                    if not isinstance(text, str) or not text.strip():
+                        logger.warning(f"Input de embedding vazio no índice {i}. Usando placeholder.")
+                        text_to_embed = "[no_text]"
+                    else:
+                        text_to_embed = text
+
+                    # Delay preventivo de 4.5s (garante ~13 RPM, abaixo do limite de 15)
+                    # O primeiro também espera para garantir intervalo com requisições anteriores
+                    time.sleep(4.5)
+
+                    result = genai.embed_content(
+                        model=self.model_name,
+                        content=text_to_embed,
+                        task_type="retrieval_document"
+                    )
+                    embeddings.append(result['embedding'])
+                    break
+                    
+                except Exception as e:
+                    error_msg = str(e)
+                    if "429" in error_msg or "ResourceExhausted" in error_msg:
+                        if retry_count >= 3:
+                            logger.error("Máximo de tentativas (3) excedido para rate limit.")
+                            raise e
+                            
+                        wait_time = 60 # Espera 1 minuto se tomar 429
+                        logger.warning(f"Rate limit (429) atingido. Aguardando {wait_time}s... (Tentativa {retry_count+1}/3)")
+                        time.sleep(wait_time)
+                        retry_count += 1
+                    else:
+                        logger.error(f"Erro não tratado no embedding: {e}")
+                        raise e
+                        
+        return embeddings
+
+# -----------------------------------------------------------------------------------------------------------------
 
 class AnalystOutput(BaseModel):
     """
-    Estrutura completa da saída do agente analista.
-
-    Attributes:
-        highlights (List[Highlight]): Lista de todos os trechos importantes identificados.
+    Saída estruturada do agente analista.
     """
+
+    # Lista de highlights identificados
     highlights: List[Highlight]
 
+# -----------------------------------------------------------------------------------------------------------------
 
-# JSON Schema que será enviado ao Gemini para garantir saída 100% estruturada
+# Schema JSON para forçar saída estruturada do Gemini
 JSON_SCHEMA = {
-    "type": "object",
+    "type": "object", # Tipo de dados
     "properties": {
         "highlights": {
             "type": "array",
@@ -87,383 +121,284 @@ JSON_SCHEMA = {
                     "summary": {"type": "string"},
                     "score": {"type": "number"},
                 },
-                "required": ["start", "end"]
+                "required": ["start", "end", "summary", "score"]
             }
         }
     },
-    "required": ["highlights"]
+    "required": ["highlights"] # Campos obrigatórios
 }
 
-
-# CLASSE PRINCIPAL DO AGENTE ANALISTA
+# -----------------------------------------------------------------------------------------------------------------
 
 class AnalystAgent:
     """
-    Agente responsável por analisar uma transcrição e identificar automaticamente
-    o(s) trecho(s) mais relevante(s) do vídeo.
-
-    Esta versão substitui completamente:
-    - Regex
-    - Parsing textual frágil
-    - Timestamp HH:MM:SS
-    - Conversão manual de tempo
-
-    Agora:
-    - O Gemini retorna **apenas JSON**
-    - A estrutura é validada pelo **Pydantic**
-    - O LangGraph recebe dados limpos, validados e prontos para uso
-
-    Além disso:
-    - Toda chamada ao LLM é protegida com try/except via `safe_llm_call`
+    Agente Analista com RAG (Retrieval-Augmented Generation).
+    
+    Fluxo:
+    1. Recebe a transcrição completa (JSON).
+    2. Divide em chunks (trechos) com timestamps.
+    3. Gera embeddings para cada chunk.
+    4. Armazena no ChromaDB.
+    5. Busca os chunks mais relevantes para critérios de "viralidade" e "impacto".
+    6. Envia apenas os chunks relevantes para o LLM decidir o corte final.
     """
 
     def __init__(self, model_name="gemini-2.5-flash"):
-        """
-        Inicializa o modelo Gemini com um schema JSON obrigatório.
-
-        Args:
-            model_name (str): Nome do modelo Gemini a ser utilizado.
-        """
-
-        # Criamos o modelo com um schema que obriga JSON válido,
-        # evitando respostas em formato textual solto.
+        self.model_name = model_name # Nome do modelo
+        self.chroma_client = chromadb.Client() # Cliente em memória (efêmero para cada job)
+        
+        # Configura o modelo Gemini para geração
         self.model = genai.GenerativeModel(
             model_name,
             generation_config={
-                "temperature": 0.3,               # Garante consistência
-                "max_output_tokens": MAX_OUTPUT_TOKENS,  # Aumentado de 2048 para 8192 (configurável via .env)
-                "response_mime_type": "application/json",  # Obriga resposta JSON
-                "response_schema": JSON_SCHEMA,   # Obriga estrutura definida acima
-            },
-            safety_settings=SAFETY_SETTINGS  # Configuração de filtros de segurança
+                "temperature": 0.2,
+                "response_mime_type": "application/json", # Tipo de resposta
+                "response_schema": JSON_SCHEMA,
+            }
         )
 
-    # ==============================================================================================================
-    def run(self, transcript: str):
-        """
-        Executa o agente analista para identificar highlights dentro da transcrição.
-
-        Args:
-            transcript (str): Texto completo da transcrição.
-
-        Returns:
-            tuple:
-                - (AnalystOutput | None): Saída validada pelo Pydantic, se bem-sucedida.
-                - (str | None): Mensagem de erro, caso ocorra falha.
-
-        A função nunca lança exceções — sempre retorna um erro seguro,
-        permitindo integração estável com o LangGraph.
-        """
-
-        # Prompt especializado enviado ao LLM
-        prompt = f"""
-Você é um especialista em análise de vídeos e precisa produzir uma saída
-**TOTALMENTE ESTRUTURADA em JSON** contendo os melhores highlights do vídeo.
-
-REGRAS IMPORTANTES:
-- Retorne apenas JSON válido (nenhum texto fora do objeto JSON).
-- Cada highlight deve conter:
-    - start: tempo inicial em segundos (float/int)
-    - end: tempo final em segundos (float/int)
-    - summary: resumo opcional
-    - score: pontuação opcional
-- Nunca escreva texto solto, explicações ou comentários.
-- Sempre garanta que start < end.
-
-TRANSCRIÇÃO PARA ANÁLISE:
-{transcript}
-"""
-
-        # CHAMADA SEGURA AO LLM (com try/except interno)
-
-        llm_response, error = safe_llm_call(self.model, prompt)
-
-        # Se ocorrer qualquer erro (timeout, erro de API, etc.), retornamos para o LangGraph como mensagem segura
-        if error:
-            return None, f"GeminiError: {error}"
-
-        # PARSE DO JSON RETORNADO
-
-        try:
-            data = json.loads(llm_response)
-
-        except Exception as e:
-            # JSON inválido ou malformado
-            return None, f"JSONDecodeError: {str(e)}"
-
-        # VALIDAÇÃO E TIPAGEM COM PYDANTIC
-
-        try:
-            parsed = AnalystOutput(**data)
-            return parsed, None  # Sucesso
-
-        except ValidationError as e:
-            # Gemini retornou JSON válido mas com campos errados
-            return None, f"PydanticValidationError: {str(e)}"
-
-    # ==============================================================================================================
-    def run_chunked(
-        self,
-        segments: List[Dict[str, Any]],
-        max_highlights: int = 5,
-        chunk_duration_seconds: int = 360
-    ):
-        """
-        Executa análise de transcrição longa usando estratégia Map-Reduce com chunking.
-
-        Esta função é usada quando a transcrição é muito longa para processar de uma vez.
-        Divide a transcrição em chunks temporais, analisa cada chunk individualmente,
-        e depois consolida e ranqueia os melhores highlights.
-
-        Args:
-            segments: Lista de segments do Whisper com campos 'start', 'end', 'text'
-            max_highlights: Número máximo de highlights a retornar (default: 5)
-            chunk_duration_seconds: Duração de cada chunk em segundos (default: 360 = 6 min)
-
-        Returns:
-            tuple:
-                - (AnalystOutput | None): Saída validada com os melhores highlights consolidados
-                - (str | None): Mensagem de erro, caso ocorra falha
-
-        Estratégia:
-            1. MAP: Divide em chunks e analisa cada um separadamente
-            2. REDUCE: Consolida todos os highlights e seleciona os N melhores
-        """
-        log.info(
-            f"Iniciando análise chunked: {len(segments)} segments, "
-            f"max_highlights={max_highlights}, chunk_duration={chunk_duration_seconds}s"
+        # Configura função de embedding customizada com Rate Limit
+        self.embedding_fn = RateLimitedGeminiEmbeddingFunction(
+            api_key=GEMINI_API_KEY,
+            model_name="models/text-embedding-004" # Modelo de embedding mais recente
         )
 
-        # FASE 1 - MAP: Dividir em chunks e processar cada um
-        chunks = create_chunks_from_segments(segments, chunk_duration_seconds)
+    def _chunk_transcription(self, transcription_data: Dict, chunk_size_seconds: int = 60) -> List[Dict]:
+        """
+        Divide a transcrição em chunks baseados em tempo.
+        """
 
-        if not chunks:
-            return None, "Falha ao criar chunks da transcrição"
+        # Obtem os segmentos da transcrição
+        segments = transcription_data.get("segments", [])
+        if not segments:
+            # Fallback se não houver segmentos detalhados: usa o texto inteiro como um chunk
+            return [{"text": transcription_data.get("text", ""), "start": 0, "end": 0}]
 
-        log.info(f"Criados {len(chunks)} chunks para processamento")
+        # Lista de chunks
+        chunks = []
+        current_chunk = []
+        current_start = segments[0].get("start", 0)
+        current_text_len = 0
+        
+        for seg in segments:
+            start = seg.get("start", 0)
+            end = seg.get("end", 0)
+            text = seg.get("text", "")
+            
+            # Se o chunk atual já passou do tamanho desejado, fecha o chunk
+            if (end - current_start) > chunk_size_seconds and current_chunk:
+                # Junta os segmentos do chunk atual
+                chunk_text = " ".join([s["text"] for s in current_chunk])
+                
+                # Adiciona o chunk à lista de chunks
+                chunks.append({
+                    "text": chunk_text,
+                    "start": current_start,
+                    "end": current_chunk[-1]["end"]
+                })
+                
+                # Inicia um novo chunk
+                current_chunk = []
 
-        all_highlights = []
+                # Atualiza o start do chunk atual
+                current_start = start
+            
+            current_chunk.append(seg)
 
-        for chunk_idx, chunk in enumerate(chunks):
-            chunk_text = get_chunk_text(chunk)
-            chunk_start, chunk_end = get_chunk_time_range(chunk)
+        # Adiciona o último chunk
+        if current_chunk:
+            # Junta os segmentos do chunk atual
+            chunk_text = " ".join([s["text"] for s in current_chunk])
+            
+            # Adiciona o chunk à lista de chunks
+            chunks.append({
+                "text": chunk_text,
+                "start": current_start,
+                "end": current_chunk[-1]["end"]
+            })
+            
+        return chunks
 
-            log.info(
-                f"Processando chunk {chunk_idx + 1}/{len(chunks)} "
-                f"(tempo: {chunk_start:.1f}s - {chunk_end:.1f}s, "
-                f"{len(chunk_text)} chars)"
+    def _index_chunks(self, chunks: List[Dict], collection_name: str):
+        """
+        Indexa os chunks no ChromaDB.
+        """
+
+        # Cria uma coleção no ChromaDB
+        collection = self.chroma_client.get_or_create_collection(
+            name=collection_name, # Nome da coleção
+            embedding_function=self.embedding_fn # Função de embedding
+        )
+
+        # Cria IDs para os chunks
+        ids = [str(i) for i in range(len(chunks))]
+        
+        # Cria documentos para os chunks
+        documents = [c["text"] for c in chunks]
+        
+        # Cria metadados para os chunks
+        metadatas = [{"start": c["start"], "end": c["end"]} for c in chunks]
+        # Filtra documentos vazios para evitar erros ao gerar embeddings
+        filtered_docs = []
+        filtered_meta = []
+        filtered_ids = []
+
+        for i, doc in enumerate(documents):
+            if isinstance(doc, str) and doc.strip():
+                filtered_docs.append(doc)
+                filtered_meta.append(metadatas[i])
+                filtered_ids.append(ids[i])
+            else:
+                logger.warning(f"Chunk {i} vazio. Pulando indexação desse chunk.")
+
+        # Se não houver documentos não vazios, não adiciona nada
+        if not filtered_docs:
+            logger.warning("Nenhum chunk não-vazio para indexar; coleção criada sem registros.")
+            return collection
+
+        # Adiciona os chunks filtrados à coleção
+        collection.add(
+            documents=filtered_docs,
+            metadatas=filtered_meta,
+            ids=filtered_ids
+        )
+        return collection
+
+    def run(self, transcription_path: str) -> Dict:
+        """
+        Executa o pipeline de análise com RAG.
+        """
+        logger.info(f"Iniciando análise RAG para: {transcription_path}")
+
+        # Carregar Transcrição
+        with open(transcription_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        # Chunking
+        chunks = self._chunk_transcription(data)
+        logger.info(f"Transcrição dividida em {len(chunks)} chunks.")
+
+        # Indexação (RAG)
+        collection_name = f"job_{uuid.uuid4().hex}"
+        collection = self._index_chunks(chunks, collection_name)
+        
+        # Retrieval (Busca pelos momentos mais interessantes)
+        # Consultas focadas em diferentes aspectos de viralidade
+        queries = [
+            "momento mais engraçado ou piada",
+            "discussão intensa ou polêmica",
+            "conclusão surpreendente ou plot twist",
+            "informação técnica valiosa ou tutorial",
+            "momento emocionante ou inspirador"
+        ]
+        
+        # Busca pelos momentos mais interessantes
+        retrieved_docs = set()
+        context_chunks = []
+
+        for query in queries:
+            results = collection.query(
+                query_texts=[query],
+                n_results=2 # Pega os top 2 de cada categoria
             )
+            
+            # Adiciona os chunks mais relevantes ao contexto
+            for i, doc in enumerate(results['documents'][0]):
+                doc_id = results['ids'][0][i] # ID do documento
+                if doc_id not in retrieved_docs:
+                    meta = results['metadatas'][0][i] # Metadados do documento
+                    context_chunks.append({
+                        "text": doc,   # Texto do chunk
+                        "start": meta["start"], # Início do chunk
+                        "end": meta["end"] # Fim do chunk
+                    })
 
-            # Prompt para análise do chunk
-            prompt = f"""
-Você é um especialista em análise de vídeos. Analise este trecho de transcrição
-e identifique os 3-5 MELHORES momentos virais/highlights.
+                    # Adiciona o ID do documento ao conjunto de documentos recuperados
+                    retrieved_docs.add(doc_id)
 
-IMPORTANTE:
-- Este é um trecho de um vídeo maior (tempo {chunk_start:.1f}s a {chunk_end:.1f}s)
-- Os timestamps devem estar DENTRO deste intervalo
-- Retorne apenas JSON válido
-- Cada highlight deve ter: start, end, summary, score (0-100)
-- Ordene por relevância (score mais alto primeiro)
-- Priorize momentos emocionantes, engraçados, informativos ou impactantes
+        # Ordena chunks por tempo para manter coerência narrativa no prompt
+        context_chunks.sort(key=lambda x: x["start"])
+        
+        # Montagem do Prompt com Contexto Recuperado
+        context_text = ""
+        for c in context_chunks:
+            context_text += f"[{c['start']:.2f}s - {c['end']:.2f}s]: {c['text']}\n\n"
 
-TRECHO DA TRANSCRIÇÃO:
-{chunk_text}
-"""
+        prompt = f"""
+                Você é um editor de vídeo especialista em cortes virais (TikTok/Reels/Shorts).
+                Abaixo estão os trechos MAIS RELEVANTES recuperados de um vídeo longo.
 
-            # Processar chunk
-            llm_response, error = safe_llm_call(self.model, prompt)
+                Sua tarefa é selecionar o MELHOR intervalo contínuo para um vídeo curto (entre 30s e 90s).
 
-            if error:
-                log.warning(f"Erro no chunk {chunk_idx + 1}: {error}")
-                continue  # Pula este chunk e continua com os outros
+                TRECHOS RECUPERADOS (Contexto):
+                {context_text}
 
-            # Parse e validação
-            try:
-                data = json.loads(llm_response)
-                chunk_output = AnalystOutput(**data)
+                CRITÉRIOS:
+                1. O corte deve ter início, meio e fim (faça sentido sozinho).
+                2. Priorize momentos de alto engajamento (humor, polêmica, surpresa).
+                3. O tempo total deve ser idealmente entre 30 e 90 segundos.
 
-                # Adiciona highlights deste chunk à lista global
-                for highlight in chunk_output.highlights:
-                    # Validação: garantir que timestamps estão dentro do chunk
-                    if highlight.start >= chunk_start and highlight.end <= chunk_end + 5:  # +5s de margem
-                        all_highlights.append(highlight)
-                        log.debug(
-                            f"  Highlight encontrado: {highlight.start:.1f}s-{highlight.end:.1f}s "
-                            f"(score: {highlight.score})"
-                        )
-                    else:
-                        log.warning(
-                            f"  Highlight fora do intervalo ignorado: "
-                            f"{highlight.start:.1f}s-{highlight.end:.1f}s"
-                        )
+                Retorne APENAS o JSON conforme o schema.
+                """
 
-            except Exception as e:
-                log.warning(f"Erro ao processar resposta do chunk {chunk_idx + 1}: {str(e)}")
-                continue
+        try:
+            response = self.model.generate_content(prompt) # Geração com LLM
+            result_json = json.loads(response.text) # Resultado da geração
+            
+            # Validação Pydantic
+            validated = AnalystOutput(**result_json)
+            
+            # Pega o melhor highlight (o primeiro ou o com maior score)
+            best_highlight = validated.highlights[0]
+            
+            # Limpa o banco vetorial
+            self.chroma_client.delete_collection(collection_name)
 
-        # Verifica se encontrou algum highlight
-        if not all_highlights:
-            return None, "Nenhum highlight encontrado em nenhum chunk"
+            # Retorna o resultado
+            return {
+                "highlight_inicio_segundos": best_highlight.start,
+                "highlight_fim_segundos": best_highlight.end,
+                "resposta_bruta": best_highlight.summary
+            }
 
-        log.info(f"Total de highlights encontrados: {len(all_highlights)}")
+        except Exception as e: # Tratamento de erros
+            logger.error(f"Erro na geração do highlight: {e}")
+            # Fallback seguro: retorna os primeiros 60 segundos se tudo falhar
+            return {
+                "highlight_inicio_segundos": 0,
+                "highlight_fim_segundos": 60,
+                "resposta_bruta": "Fallback: Erro na análise inteligente."
+            }
 
-        # FASE 2 - REDUCE: Consolidar e selecionar os melhores
-        final_highlights = self._consolidate_and_rank_highlights(
-            all_highlights,
-            max_highlights
-        )
+# -------------------------------------------------------------------------------------------------------------
 
-        log.info(f"Highlights finais selecionados: {len(final_highlights)}")
+def executar_agente_analista(input_json: str, output_json: str) -> Dict:
+    """
+    Wrapper para manter compatibilidade com o worker existente.
+    Instancia a classe AnalystAgent e executa o fluxo.
+    """
 
-        # Retorna resultado final
-        result = AnalystOutput(highlights=final_highlights)
-        return result, None
+    # Carrega o arquivo de transcrição
+    with open(input_json, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    
+    # Instancia o agente
+    agent = AnalystAgent()
+    
+    # Executa o agente
+    resultado = agent.run(input_json)
+    
+    # Garante que o diretório de saída existe antes de salvar o resultado
+    output_dir = os.path.dirname(output_json)
+    if output_dir:
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+        except Exception as e:
+            logger.warning(f"Não foi possível criar diretório de saída {output_dir}: {e}")
 
-    # ==============================================================================================================
-    def _consolidate_and_rank_highlights(
-        self,
-        highlights: List[Highlight],
-        max_highlights: int
-    ) -> List[Highlight]:
-        """
-        Consolida e ranqueia highlights para selecionar os N melhores.
-
-        Estratégia:
-        1. Remove duplicatas (highlights muito próximos)
-        2. Ordena por score
-        3. Garante diversidade temporal (evita concentrar todos no início)
-        4. Seleciona os top N
-
-        Args:
-            highlights: Lista de todos os highlights encontrados
-            max_highlights: Número máximo de highlights a retornar
-
-        Returns:
-            Lista de highlights consolidados e ranqueados
-        """
-        if not highlights:
-            return []
-
-        log.info(f"Consolidando {len(highlights)} highlights para {max_highlights} finais")
-
-        # 1. Atribuir score padrão se não houver
-        for h in highlights:
-            if h.score is None:
-                h.score = 50.0  # Score neutro
-
-        # 2. Ordenar por score (maior para menor)
-        sorted_highlights = sorted(highlights, key=lambda h: h.score or 0, reverse=True)
-
-        # 3. Remover overlaps/duplicatas
-        deduplicated = []
-        for highlight in sorted_highlights:
-            # Verifica se este highlight já está muito próximo de algum já selecionado
-            is_duplicate = False
-            for selected in deduplicated:
-                # Se há overlap significativo (>70%), considera duplicata
-                overlap = self._calculate_overlap(highlight, selected)
-                if overlap > 0.7:
-                    is_duplicate = True
-                    log.debug(
-                        f"Highlight duplicado ignorado: {highlight.start:.1f}s-{highlight.end:.1f}s "
-                        f"(overlap {overlap:.2%} com {selected.start:.1f}s-{selected.end:.1f}s)"
-                    )
-                    break
-
-            if not is_duplicate:
-                deduplicated.append(highlight)
-
-        # 4. Garantir diversidade temporal se temos muitos highlights
-        if len(deduplicated) > max_highlights * 2:
-            deduplicated = self._ensure_temporal_diversity(deduplicated, max_highlights)
-
-        # 5. Selecionar top N
-        final = deduplicated[:max_highlights]
-
-        # 6. Ordenar por timestamp (para facilitar edição)
-        final.sort(key=lambda h: h.start)
-
-        log.info(
-            f"Consolidação concluída: {len(final)} highlights finais "
-            f"(de {len(highlights)} originais)"
-        )
-
-        return final
-
-    # ==============================================================================================================
-    def _calculate_overlap(self, h1: Highlight, h2: Highlight) -> float:
-        """
-        Calcula a proporção de overlap entre dois highlights.
-
-        Returns:
-            Float entre 0.0 (sem overlap) e 1.0 (overlap total)
-        """
-        # Encontra o intervalo de interseção
-        overlap_start = max(h1.start, h2.start)
-        overlap_end = min(h1.end, h2.end)
-
-        # Se não há overlap
-        if overlap_start >= overlap_end:
-            return 0.0
-
-        # Calcula overlap como proporção do menor highlight
-        overlap_duration = overlap_end - overlap_start
-        h1_duration = h1.end - h1.start
-        h2_duration = h2.end - h2.start
-        smaller_duration = min(h1_duration, h2_duration)
-
-        return overlap_duration / smaller_duration if smaller_duration > 0 else 0.0
-
-    # ==============================================================================================================
-    def _ensure_temporal_diversity(
-        self,
-        highlights: List[Highlight],
-        target_count: int
-    ) -> List[Highlight]:
-        """
-        Garante que os highlights estejam distribuídos ao longo do vídeo.
-
-        Evita pegar todos os highlights do início e ignora o resto.
-
-        Args:
-            highlights: Lista de highlights ordenados por score
-            target_count: Número alvo de highlights
-
-        Returns:
-            Lista com highlights mais diversificados temporalmente
-        """
-        if len(highlights) <= target_count:
-            return highlights
-
-        # Divide o vídeo em "buckets" temporais
-        num_buckets = min(target_count, 5)  # Máximo 5 buckets
-        video_duration = max(h.end for h in highlights)
-        bucket_duration = video_duration / num_buckets
-
-        # Agrupa highlights por bucket
-        buckets = [[] for _ in range(num_buckets)]
-        for h in highlights:
-            bucket_idx = min(int(h.start / bucket_duration), num_buckets - 1)
-            buckets[bucket_idx].append(h)
-
-        # Seleciona os melhores de cada bucket
-        selected = []
-        highlights_per_bucket = max(1, target_count // num_buckets)
-
-        for bucket in buckets:
-            if bucket:
-                # Pega os top N deste bucket
-                bucket_sorted = sorted(bucket, key=lambda h: h.score or 0, reverse=True)
-                selected.extend(bucket_sorted[:highlights_per_bucket])
-
-        # Se ainda falta, completa com os melhores restantes
-        if len(selected) < target_count:
-            remaining = [h for h in highlights if h not in selected]
-            remaining_sorted = sorted(remaining, key=lambda h: h.score or 0, reverse=True)
-            selected.extend(remaining_sorted[:target_count - len(selected)])
-
-        # Reordena por score final
-        selected.sort(key=lambda h: h.score or 0, reverse=True)
-
-        return selected[:target_count]
+    # Salva o resultado no disco (como o worker espera)
+    with open(output_json, "w", encoding="utf-8") as f:
+        json.dump(resultado, f, ensure_ascii=False, indent=4)
+    
+    # Retorna o resultado
+    return resultado

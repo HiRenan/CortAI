@@ -13,6 +13,7 @@ from src.services.messaging_rabbit import (
     consume,
     publish,
     new_job,
+    declare_infraestructure,
     EDIT_QUEUE,
     COMPLETED_QUEUE
 )
@@ -48,8 +49,8 @@ def handle_editor(message: dict):
     # Atualiza o estado do job
     update_job_state(job_id, JobStatus.PROCESSING, "edit", {"highlight_path": highlight_path})
 
-    # Cria o diretório para o vídeo editado
-    output_video_path = f"/app/data/output/{job_id}_highlight.mp4"
+    # Cria o diretório para o vídeo editado (organizado por job_id)
+    output_video_path = f"/app/data/jobs/{job_id}/highlights/{job_id}_highlight.mp4"
 
     # Garante que o diretório existe
     os.makedirs(os.path.dirname(output_video_path), exist_ok=True)
@@ -102,6 +103,12 @@ def handle_editor(message: dict):
 if __name__ == "__main__":
     # Inicia o worker
     print("\n=== WORKER EDITOR INICIADO ===")
+    
+    # Garante que a infraestrutura de filas existe
+    print("Verificando infraestrutura de filas...")
+    declare_infraestructure()
+    print("Infraestrutura verificada!\n")
+    
     print(f"Escutando fila: {EDIT_QUEUE}")
     print("Aguardando jobs...\n")
 
