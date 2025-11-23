@@ -2,7 +2,7 @@
 Authentication routes for user registration, login, and profile
 """
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import timedelta
@@ -61,7 +61,7 @@ async def register(
 
 @router.post("/login", response_model=Token)
 async def login(
-    form_data: OAuth2PasswordRequestForm = Depends(),
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -77,12 +77,32 @@ async def login(
     Raises:
         HTTPException 401: If credentials are invalid
     """
-    # Find user by email (username field in OAuth2 form)
-    result = await db.execute(select(User).where(User.email == form_data.username))
+    # Read form or JSON body to support both content-types
+    email = None
+    password = None
+    try:
+        form = await request.form()
+        email = form.get("username") or form.get("email")
+        password = form.get("password")
+    except Exception:
+        pass
+    if not email or not password:
+        try:
+            data = await request.json()
+            email = data.get("email") or data.get("username")
+            password = data.get("password")
+        except Exception:
+            email = None
+            password = None
+    if not email or not password:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Credenciais ausentes")
+
+    # Find user by email
+    result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
     # Verify user exists and password is correct
-    if not user or not verify_password(form_data.password, user.hashed_password):
+    if not user or not verify_password(password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email ou senha incorretos",
