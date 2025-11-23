@@ -6,7 +6,17 @@ import time
 import re
 
 @celery_app.task(bind=True)
-def process_video_task(self, url: str, video_id: int, max_highlights: int = 5, include_subtitles: bool = True, subtitle_style: str = "youtube"):
+def process_video_task(
+    self,
+    url: str,
+    video_id: int,
+    max_highlights: int = 5,
+    include_subtitles: bool = True,
+    subtitle_style: str = "youtube",
+    use_stream_collector: bool = False,
+    stream_segment_duration: int = 60,
+    stream_max_duration: int = 300,
+):
     """
     Task do Celery que executa o pipeline completo do LangGraph.
 
@@ -16,6 +26,9 @@ def process_video_task(self, url: str, video_id: int, max_highlights: int = 5, i
         max_highlights: Número máximo de highlights a gerar
         include_subtitles: Se True, adiciona legendas burned-in nos clips
         subtitle_style: Estilo das legendas ('youtube' por padrão)
+        use_stream_collector: Força pipeline de captura de stream (FFmpeg + yt-dlp) para lives
+        stream_segment_duration: Duração de cada segmento ao capturar live (segundos)
+        stream_max_duration: Duração total da captura da live (segundos)
     """
     try:
         # Atualiza estado inicial
@@ -38,7 +51,10 @@ def process_video_task(self, url: str, video_id: int, max_highlights: int = 5, i
             "max_highlights": max_highlights,
             "video_id": video_id,
             "include_subtitles": include_subtitles,
-            "subtitle_style": subtitle_style
+            "subtitle_style": subtitle_style,
+            "use_stream_collector": use_stream_collector,
+            "stream_segment_duration": stream_segment_duration,
+            "stream_max_duration": stream_max_duration,
         }
 
         # Executa o grafo

@@ -12,6 +12,22 @@ class VideoCreate(BaseModel):
     url: str = Field(
         description="URL of the video to process (YouTube, Twitch, etc.)"
     )
+    use_stream_collector: Optional[bool] = Field(
+        default=False,
+        description="Force stream collector (FFmpeg + yt-dlp) for lives/RTMP/HLS even when URL is not auto-detected"
+    )
+    stream_segment_duration: Optional[int] = Field(
+        default=60,
+        ge=10,
+        le=600,
+        description="Segment duration (seconds) when capturing a live stream"
+    )
+    stream_max_duration: Optional[int] = Field(
+        default=300,
+        ge=30,
+        le=3600,
+        description="Total capture duration (seconds) when recording a live stream"
+    )
     max_highlights: Optional[int] = Field(
         default=5,
         ge=1,

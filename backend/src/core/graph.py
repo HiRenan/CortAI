@@ -164,6 +164,9 @@ class CortAIState(TypedDict, total=False):
     max_highlights: Optional[int]  # Maximum number of highlights to generate (default: 5)
     include_subtitles: Optional[bool]  # Include burned-in subtitles in clips (default: True)
     subtitle_style: Optional[str]  # Subtitle style: 'youtube' (default)
+    use_stream_collector: Optional[bool]  # Force stream collector for lives
+    stream_segment_duration: Optional[int]  # Segment duration for stream capture
+    stream_max_duration: Optional[int]  # Total duration for stream capture
 
 
 # Nó 1: Transcrever vídeo
@@ -210,11 +213,13 @@ def node_transcrever(state: CortAIState) -> CortAIState:
 
     if use_collector:
         print("  URL parece stream. Coletando segmentos antes de transcrever...")
+        segment_duration = max(10, min(int(state.get("stream_segment_duration", 60) or 60), 600))
+        max_duration = max(30, min(int(state.get("stream_max_duration", 300) or 300), 3600))
         collect_result = executar_agente_coletor(
             stream_url=url,
             output_dir=paths["segments_dir"],
-            segment_duration=60,
-            max_duration=300
+            segment_duration=segment_duration,
+            max_duration=max_duration
         )
         if not collect_result or not collect_result.get("segment_paths"):
             state["error"] = "Falha na coleta do stream."
