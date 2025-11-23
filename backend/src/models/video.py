@@ -49,6 +49,10 @@ class Video(Base):
         String(500),
         nullable=True
     )
+    thumbnail_path: Mapped[Optional[str]] = mapped_column(
+        String(500),
+        nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,

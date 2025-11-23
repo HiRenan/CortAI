@@ -16,7 +16,7 @@ export function VideoCard({ video, onDelete }: VideoCardProps) {
 
   const handleDownload = async () => {
     try {
-      const token = localStorage.getItem('token')
+      const token = localStorage.getItem('auth_token')
       if (!token) {
         alert('Você precisa estar autenticado para baixar o clip')
         return
@@ -24,20 +24,18 @@ export function VideoCard({ video, onDelete }: VideoCardProps) {
 
       const response = await fetch(`http://localhost:8000/api/v1/videos/${video.id}/download`, {
         headers: {
-          'Authorization': `Bearer ${token}`,
-        },
+          Authorization: `Bearer ${token}`,
+        }
       })
 
       if (!response.ok) {
         throw new Error('Erro ao baixar o clip')
       }
 
-      // Get filename from Content-Disposition header or use default
       const contentDisposition = response.headers.get('Content-Disposition')
       const filenameMatch = contentDisposition?.match(/filename="(.+)"/)
       const filename = filenameMatch ? filenameMatch[1] : `clip_video_${video.id}.mp4`
 
-      // Create blob and download
       const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -78,6 +76,16 @@ export function VideoCard({ video, onDelete }: VideoCardProps) {
   const currentStatus = statusConfig[video.status]
   const StatusIcon = currentStatus.icon
 
+  const getYoutubeThumb = (url: string) => {
+    const matchId = url.match(/v=([A-Za-z0-9_-]{6,})/) || url.match(/youtu\.be\/([A-Za-z0-9_-]{6,})/)
+    if (matchId && matchId[1]) {
+      return `https://img.youtube.com/vi/${matchId[1]}/hqdefault.jpg`
+    }
+    return null
+  }
+
+  const poster = video.thumbnail_path || getYoutubeThumb(video.url)
+
   return (
     <div className={`
       overflow-hidden rounded-lg border transition-all duration-300
@@ -86,9 +94,9 @@ export function VideoCard({ video, onDelete }: VideoCardProps) {
     `}>
       {/* Thumbnail / Placeholder */}
       <div className="relative aspect-video w-full bg-gradient-to-br from-indigo-100 via-slate-100 to-teal-100 flex items-center justify-center overflow-hidden">
-        {video.output_path ? (
+        {poster ? (
           <img
-            src={video.output_path}
+            src={poster}
             alt={video.title || 'Vídeo'}
             className="w-full h-full object-cover"
           />
@@ -123,7 +131,7 @@ export function VideoCard({ video, onDelete }: VideoCardProps) {
       <div className="p-4 space-y-3 bg-white">
         {/* Title */}
         <h3 className="font-semibold text-base text-gray-900 line-clamp-2 min-h-[3rem]">
-          {video.title || 'Processando...'}
+          {video.title || (isCompleted ? 'Vídeo processado' : 'Processando...')}
         </h3>
 
         {/* URL */}

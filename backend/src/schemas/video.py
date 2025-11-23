@@ -18,6 +18,14 @@ class VideoCreate(BaseModel):
         le=20,
         description="Maximum number of highlights to generate (1-20, default: 5)"
     )
+    include_subtitles: Optional[bool] = Field(
+        default=True,
+        description="Include burned-in subtitles in the generated clips (default: True)"
+    )
+    subtitle_style: Optional[str] = Field(
+        default="youtube",
+        description="Subtitle style: 'youtube' for classic style with black background (default: 'youtube')"
+    )
 
 
 class VideoResponse(BaseModel):
@@ -29,6 +37,7 @@ class VideoResponse(BaseModel):
     status: VideoStatus
     task_id: Optional[str] = None
     output_path: Optional[str] = None
+    thumbnail_path: Optional[str] = None
     created_at: datetime
 
     # Progress tracking fields
@@ -52,6 +61,10 @@ class TaskStatusResponse(BaseModel):
     status: str
     video_id: Optional[int] = None
     result: Optional[dict] = None
+
+    # Video DB fields
+    video_status: Optional[VideoStatus] = None
+    output_path: Optional[str] = None
 
     # Progress tracking fields
     progress_stage: Optional[str] = None

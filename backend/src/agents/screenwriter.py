@@ -81,3 +81,29 @@ def choose_thumbnail(source_path: str, start_time: float, end_time: float, outpu
     cmd = ["ffmpeg", "-y", "-ss", str(ts), "-i", source_path, *vf_arg, "-vframes", "1", output_path]
     subprocess.run(cmd, capture_output=True)
     return output_path
+
+def get_subtitle_style_youtube() -> str:
+    """
+    Returns FFmpeg subtitle filter style for YouTube/TikTok appearance.
+
+    Style characteristics:
+    - Font: Arial (fallback to Sans)
+    - Size: 24pt (readable on mobile)
+    - Color: White text with black outline
+    - Background: Semi-transparent black box
+    - Position: Bottom center with margin
+
+    Returns:
+        str: FFmpeg force_style parameter string
+    """
+    return (
+        "FontName=Arial,"
+        "FontSize=24,"
+        "PrimaryColour=&HFFFFFF,"      # White text
+        "OutlineColour=&H000000,"      # Black outline
+        "Outline=2,"                   # 2px outline thickness
+        "BackColour=&H80000000,"       # Semi-transparent black background
+        "BorderStyle=3,"               # Box background style
+        "Alignment=2,"                 # Bottom center alignment
+        "MarginV=40"                   # 40px margin from bottom
+    )

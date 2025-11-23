@@ -48,9 +48,18 @@ async def process_video(
     await db.commit()
     await db.refresh(video)
 
-    # Pass max_highlights to task (default: 5)
+    # Pass configuration to task
     max_highlights = request.max_highlights or 5
-    task = process_video_task.delay(request.url, video.id, max_highlights)
+    include_subtitles = request.include_subtitles if request.include_subtitles is not None else True
+    subtitle_style = request.subtitle_style or "youtube"
+
+    task = process_video_task.delay(
+        request.url,
+        video.id,
+        max_highlights,
+        include_subtitles,
+        subtitle_style
+    )
 
     video.task_id = task.id
     await db.commit()
@@ -153,6 +162,8 @@ async def get_task_status(
         "progress_stage": video.progress_stage,
         "progress_percentage": video.progress_percentage,
         "progress_message": video.progress_message,
+        "video_status": video.status.value if hasattr(video.status, "value") else str(video.status),
+        "output_path": video.output_path,
     }
 
 
@@ -215,8 +226,16 @@ async def download_video_clip(
         )
 
     # Construct the full path to the clip
-    # output_path is like: /data/video_11/clips/clip_01_inicio_0s_duracao_15s.mp4
+    # output_path may be absolute (/data/...) or relative (backend/data/...)
     clip_path = Path(video.output_path)
+    # Normalize legacy paths that pointed to /data inside container root
+    try:
+        from src.core.config import DATA_DIR
+        data_dir = Path(DATA_DIR)
+        if str(clip_path).startswith("/data"):
+            clip_path = data_dir / clip_path.relative_to("/data")
+    except Exception:
+        pass
 
     # Check if file exists
     if not clip_path.exists():

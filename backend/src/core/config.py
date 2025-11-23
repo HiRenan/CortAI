@@ -21,7 +21,12 @@ STORAGE_THUMBNAILS = STORAGE_DIR / "thumbnails"
 STORAGE_TEMP = STORAGE_DIR / "temp"
 
 # Data directory (for intermediate processing)
-DATA_DIR = ROOT_DIR / "data"
+# Use /app/data when running in Docker (volume mounted at /app/data)
+# Use ROOT_DIR/data when running locally
+if os.path.exists("/app"):
+    DATA_DIR = Path("/app/data")
+else:
+    DATA_DIR = ROOT_DIR / "data"
 
 # Ensure directories exist
 for directory in [STORAGE_DIR, STORAGE_VIDEOS, STORAGE_CLIPS, STORAGE_THUMBNAILS, STORAGE_TEMP, DATA_DIR]:
@@ -64,6 +69,8 @@ def get_cors_origins() -> list[str]:
             "http://127.0.0.1:3000",
         ]
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+CORS_ORIGINS = get_cors_origins()
 
 # Validate critical environment variables
 if not GOOGLE_API_KEY:

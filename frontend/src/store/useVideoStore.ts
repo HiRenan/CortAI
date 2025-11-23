@@ -10,7 +10,7 @@ interface VideoStore {
   error: string | null
 
   fetchVideos: () => Promise<void>
-  addVideo: (url: string, maxHighlights?: number) => Promise<void>
+  addVideo: (url: string, maxHighlights?: number, includeSubtitles?: boolean) => Promise<void>
   deleteVideo: (id: number) => Promise<void>
   checkStatus: (id: number) => Promise<void>
 }
@@ -45,13 +45,15 @@ export const useVideoStore = create<VideoStore>()(
         }
       },
 
-      addVideo: async (url, maxHighlights = 5) => {
+      addVideo: async (url, maxHighlights = 5, includeSubtitles = true) => {
         set({ error: null })
 
         try {
           const response = await api.post<Video>('/api/v1/videos/process', {
             url,
-            max_highlights: maxHighlights
+            max_highlights: maxHighlights,
+            include_subtitles: includeSubtitles,
+            subtitle_style: 'youtube'
           })
           const newVideo = response.data
 
@@ -95,19 +97,29 @@ export const useVideoStore = create<VideoStore>()(
         try {
           const { data } = await api.get<TaskStatusResponse>(`/api/v1/videos/status/${video.task_id}`)
 
-          // Update video with progress tracking data
+          const mappedStatus =
+            data.video_status ||
+            (data.status === 'SUCCESS' ? 'completed' :
+             data.status === 'FAILURE' ? 'failed' : undefined)
+
           set((state) => ({
             videos: state.videos.map((v) =>
               v.id === id ? {
                 ...v,
-                status: data.status === 'SUCCESS' ? 'completed' :
-                        data.status === 'FAILURE' ? 'failed' : v.status,
+                status: mappedStatus || v.status,
                 progress_stage: data.progress_stage,
                 progress_percentage: data.progress_percentage,
-                progress_message: data.progress_message
+                progress_message: data.progress_message,
+                output_path: data.output_path ?? v.output_path,
               } : v
             )
           }))
+
+          // Se completou, faz um refresh geral para pegar eventuais novos campos
+          if (mappedStatus === 'completed') {
+            const refreshed = await api.get<VideoListResponse>('/api/v1/videos/')
+            set({ videos: refreshed.data.videos })
+          }
         } catch (error) {
           console.error('Erro ao checar status:', error)
         }

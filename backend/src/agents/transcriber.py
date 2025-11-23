@@ -1,8 +1,7 @@
 import os # Interage com o Sistema Operacional
 import json # Usada para salvar o dicionário da transcrição em formato JSON
 from typing import Dict, Any, Optional # Usada para tipar as funções
-import whisper # Biblioteca OpenAI Whisper
-import torch # PyTorch para verificação de GPU
+from faster_whisper import WhisperModel  # faster-whisper (4-5x mais rápido)
 
 # Variável global para armazenar o modelo carregado (Singleton)
 _whisper_model = None
@@ -10,14 +9,27 @@ _whisper_model = None
 def get_model():
     """
     Carrega o modelo Whisper de forma preguiçosa (Lazy Loading).
+    Usa faster-whisper para performance 4-5x melhor em CPU.
     """
     global _whisper_model
     if _whisper_model is None:
-        print("Carregando modelo Whisper (base)... isso pode demorar um pouco.")
-        # Usa GPU se disponível, senão CPU
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"Usando dispositivo: {device}")
-        _whisper_model = whisper.load_model("base", device=device)
+        print("Carregando modelo faster-whisper (base)... isso pode demorar um pouco.")
+        # faster-whisper usa device="cpu" ou "cuda"
+        # compute_type: "int8" para CPU (mais rápido), "float16" para GPU
+        device = "cpu"  # AMD GPU (ROCm) não é suportado diretamente, usando CPU otimizado
+        compute_type = "int8"  # Quantização para CPU (4x mais rápido com pouca perda)
+
+        print(f"Usando dispositivo: {device} com compute_type: {compute_type}")
+        print("ℹ️ faster-whisper é 4-5x mais rápido que openai-whisper em CPU!")
+
+        # Cria modelo com otimizações
+        _whisper_model = WhisperModel(
+            "base",  # Modelo base (boa qualidade/velocidade)
+            device=device,
+            compute_type=compute_type,
+            num_workers=4,  # Usa 4 threads para CPU
+            cpu_threads=8   # Threads para processamento
+        )
     return _whisper_model
 
 # --------------------------------------------------------------------------------------------------------------------------------------
@@ -45,15 +57,19 @@ def executar_transcricao_segmento(segment_path: str) -> Optional[Dict[str, Any]]
     try:
         # Carrega o modelo
         model = get_model()
-        
-        # Realiza a transcrição
-        # fp16=False é importante para CPU, mas se tiver GPU pode ser True. 
-        # Vamos manter False por segurança ou verificar device.
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        use_fp16 = (device == "cuda")
-        
-        result = model.transcribe(segment_path, fp16=use_fp16) 
-        text = result["text"].strip()
+
+        # Realiza a transcrição com faster-whisper
+        # faster-whisper retorna (segments, info) em vez de dict
+        segments, info = model.transcribe(
+            segment_path,
+            beam_size=5,
+            vad_filter=True,  # Voice Activity Detection (remove silêncio)
+            vad_parameters=dict(min_silence_duration_ms=500)
+        )
+
+        # Converte segments para lista e extrai texto
+        segments_list = list(segments)
+        text = " ".join([seg.text for seg in segments_list]).strip()
         
         # Extrai o nome do segmento para calcular timestamps relativos (se necessário)
         segment_name = os.path.basename(segment_path)
@@ -111,10 +127,10 @@ def transcricao_youtube_video(url: str, temp_video_path: str, model_size: str = 
     try:
         # Importa yt-dlp para download do vídeo
         import yt_dlp
-        
+
         # Garante que o diretório existe
         os.makedirs(os.path.dirname(temp_video_path), exist_ok=True)
-        
+
         # Configurações do yt-dlp
         ydl_opts = {
             'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',  # Baixa vídeo + áudio
@@ -123,53 +139,136 @@ def transcricao_youtube_video(url: str, temp_video_path: str, model_size: str = 
             'no_warnings': False,
             'merge_output_format': 'mp4',  # Garante que o output seja MP4
         }
-        
+
         # Baixa o vídeo
         print(f"Baixando vídeo do YouTube...")
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
-        
+
         print(f"Vídeo baixado em: {temp_video_path}")
-        
+
         # Verifica se o arquivo foi baixado
         if not os.path.exists(temp_video_path):
             print(f"Erro: Arquivo de vídeo não foi criado em {temp_video_path}")
             return None
-        
+
         # Carrega o modelo Whisper
-        print(f"Carregando modelo Whisper ({model_size})...")
+        print(f"Carregando modelo faster-whisper ({model_size})...")
         model = get_model()
-        
-        # Realiza a transcrição
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        use_fp16 = (device == "cuda")
-        
-        print(f"Transcrevendo vídeo...")
-        result = model.transcribe(temp_video_path, fp16=use_fp16)
-        text = result["text"].strip()
-        
-        # Cria o dicionário de resultado
+
+        # Realiza a transcrição com faster-whisper
+        print(f"Transcrevendo vídeo com faster-whisper... (4-5x mais rápido!)")
+        segments, info = model.transcribe(
+            temp_video_path,
+            beam_size=5,
+            vad_filter=True,  # Remove silêncios automaticamente
+            vad_parameters=dict(min_silence_duration_ms=500)
+        )
+
+        # Converte generator para lista e extrai dados
+        segments_list = []
+        full_text = []
+
+        for segment in segments:
+            full_text.append(segment.text)
+            segments_list.append({
+                "start": segment.start,
+                "end": segment.end,
+                "text": segment.text.strip()
+            })
+
+        text = " ".join(full_text).strip()
+
+        # Cria o dicionário de resultado (compatível com formato antigo)
         transcricao_result = {
             "text": text,
             "url": url,
             "video_path": temp_video_path,
-            "segments": result.get("segments", [])  # Inclui segmentos detalhados do Whisper
+            "segments": segments_list,  # Segmentos detalhados (compatível)
+            "language": info.language,
+            "duration": info.duration
         }
-        
+
         print(f"Texto transcrito ({len(text)} chars): {text[:100]}...")
-        
+
         # Salva em JSON se o caminho foi fornecido
         if output_json_path:
             os.makedirs(os.path.dirname(output_json_path), exist_ok=True)
             with open(output_json_path, "w", encoding="utf-8") as f:
                 json.dump(transcricao_result, f, indent=4, ensure_ascii=False)
             print(f"Transcrição salva em: {output_json_path}")
-        
+
         return transcricao_result
-        
+
     except Exception as e:
         print(f"Erro durante download/transcrição do YouTube: {str(e)}")
         import traceback
         traceback.print_exc()
+        return None
+
+# --------------------------------------------------------------------------------------------------------------------------------------
+
+def transcrever_video_local(video_path: str, output_json_path: str, model_size: str = "base") -> Optional[Dict[str, Any]]:
+    """
+    Transcreve um arquivo de vídeo local com Whisper (sem download).
+
+    Args:
+        video_path (str): Caminho do arquivo de vídeo já disponível localmente
+        output_json_path (str): Caminho onde a transcrição será salva
+        model_size (str): Tamanho do modelo Whisper
+    """
+
+    if not os.path.exists(video_path):
+        print(f"Erro: Arquivo de vídeo não encontrado: {video_path}")
+        return None
+
+    try:
+        # Carrega o modelo Whisper
+        print(f"Carregando modelo faster-whisper ({model_size})...")
+        model = get_model()
+
+        print(f"Transcrevendo vídeo local com faster-whisper... (4-5x mais rápido!)")
+        segments, info = model.transcribe(
+            video_path,
+            beam_size=5,
+            vad_filter=True,
+            vad_parameters=dict(min_silence_duration_ms=500)
+        )
+
+        # Converte segments para formato compatível
+        segments_list = []
+        full_text = []
+
+        for segment in segments:
+            full_text.append(segment.text)
+            segments_list.append({
+                "start": segment.start,
+                "end": segment.end,
+                "text": segment.text.strip()
+            })
+
+        text = " ".join(full_text).strip()
+
+        transcricao_result = {
+            "text": text,
+            "video_path": video_path,
+            "segments": segments_list,
+            "language": info.language,
+            "duration": info.duration
+        }
+
+        # Salva o dicionário em um arquivo JSON
+        output_dir = os.path.dirname(output_json_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+
+        with open(output_json_path, "w", encoding="utf-8") as f:
+            json.dump(transcricao_result, f, indent=4, ensure_ascii=False)
+
+        print(f"Transcrição concluída e salva em: {output_json_path}")
+        return transcricao_result
+
+    except Exception as e:
+        print(f"Erro inesperado durante a transcrição local: {str(e)}")
         return None
 
