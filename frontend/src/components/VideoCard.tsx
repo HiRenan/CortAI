@@ -1,4 +1,4 @@
-import { Video as VideoIcon, Download, ExternalLink, Trash2, AlertCircle } from 'lucide-react'
+import { Video as VideoIcon, Download, ExternalLink, Trash2, AlertCircle, Clock, CheckCircle, XCircle } from 'lucide-react'
 import { ProgressStepper } from './ProgressStepper'
 import type { Video } from '../types/api'
 
@@ -53,28 +53,39 @@ export function VideoCard({ video, onDelete }: VideoCardProps) {
     }
   }
 
-  // Badge color based on status
-  const badgeColors = {
-    processing: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-    completed: 'bg-green-100 text-green-800 border-green-200',
-    failed: 'bg-red-100 text-red-800 border-red-200'
+  // Badge styling based on status
+  const statusConfig = {
+    processing: {
+      badge: 'bg-amber-100 text-amber-800 border-amber-200',
+      card: 'border-indigo-200 bg-indigo-50/30',
+      icon: Clock,
+      label: 'Em Processamento'
+    },
+    completed: {
+      badge: 'bg-teal-100 text-teal-800 border-teal-200',
+      card: 'border-teal-200 bg-teal-50/30',
+      icon: CheckCircle,
+      label: 'Concluído'
+    },
+    failed: {
+      badge: 'bg-red-100 text-red-800 border-red-200',
+      card: 'border-red-200 bg-red-50/30',
+      icon: XCircle,
+      label: 'Falhou'
+    }
   }
 
-  // Card border color based on status
-  const cardBorderColors = {
-    processing: 'border-purple-200 bg-purple-50/30',
-    completed: 'border-green-200 bg-green-50/30',
-    failed: 'border-red-200 bg-red-50/30'
-  }
+  const currentStatus = statusConfig[video.status]
+  const StatusIcon = currentStatus.icon
 
   return (
     <div className={`
-      overflow-hidden rounded-xl border-2 transition-all duration-300
-      hover:shadow-xl hover:-translate-y-1
-      ${cardBorderColors[video.status]}
+      overflow-hidden rounded-lg border transition-all duration-300
+      hover:shadow-lg hover:-translate-y-0.5
+      ${currentStatus.card}
     `}>
       {/* Thumbnail / Placeholder */}
-      <div className="relative aspect-video w-full bg-gradient-to-br from-purple-100 via-blue-100 to-cyan-100 flex items-center justify-center overflow-hidden">
+      <div className="relative aspect-video w-full bg-gradient-to-br from-indigo-100 via-slate-100 to-teal-100 flex items-center justify-center overflow-hidden">
         {video.output_path ? (
           <img
             src={video.output_path}
@@ -82,28 +93,27 @@ export function VideoCard({ video, onDelete }: VideoCardProps) {
             className="w-full h-full object-cover"
           />
         ) : (
-          <VideoIcon className="h-20 w-20 text-purple-300" />
+          <VideoIcon className="h-20 w-20 text-indigo-300" strokeWidth={1.5} />
         )}
 
         {/* Status Badge Overlay */}
         <div className="absolute top-3 right-3 flex items-center gap-2">
           <span className={`
-            inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold
-            border backdrop-blur-sm
-            ${badgeColors[video.status]}
+            inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold
+            border backdrop-blur-sm shadow-sm
+            ${currentStatus.badge}
           `}>
-            {isProcessing && '⏳ Em Processamento'}
-            {isCompleted && '✅ Concluído'}
-            {isFailed && '❌ Falhou'}
+            <StatusIcon className="w-3.5 h-3.5" strokeWidth={2.5} />
+            {currentStatus.label}
           </span>
 
           {onDelete && (
             <button
               onClick={() => onDelete(video.id)}
-              className="flex items-center justify-center p-2 rounded-full border-2 border-gray-200 text-gray-600 bg-white/80 hover:border-red-500 hover:text-red-600 hover:bg-red-50 transition-all shadow-sm"
+              className="flex items-center justify-center p-2 rounded-lg border border-slate-200 text-slate-600 bg-white/90 hover:border-red-400 hover:text-red-600 hover:bg-red-50 transition-all shadow-sm"
               title="Excluir vídeo"
             >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className="w-4 h-4" strokeWidth={2} />
             </button>
           )}
         </div>
@@ -121,9 +131,9 @@ export function VideoCard({ video, onDelete }: VideoCardProps) {
           href={video.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-1 text-xs text-gray-500 hover:text-purple-600 transition-colors line-clamp-1"
+          className="flex items-center gap-1 text-xs text-slate-500 hover:text-indigo-600 transition-colors line-clamp-1"
         >
-          <ExternalLink className="w-3 h-3 flex-shrink-0" />
+          <ExternalLink className="w-3 h-3 flex-shrink-0" strokeWidth={2} />
           <span className="truncate">{video.url}</span>
         </a>
 
@@ -153,13 +163,13 @@ export function VideoCard({ video, onDelete }: VideoCardProps) {
 
         {/* Actions */}
         {(isCompleted || isProcessing || isFailed) && (showDownload || canDelete) && (
-          <div className="flex gap-2 pt-2 border-t border-gray-100">
+          <div className="flex gap-2 pt-2 border-t border-slate-100">
             {showDownload && (
               <button
                 onClick={handleDownload}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all font-medium text-sm shadow-md hover:shadow-lg"
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-teal-600 text-white rounded-lg hover:from-indigo-700 hover:to-teal-700 transition-all font-medium text-sm shadow-md hover:shadow-lg"
               >
-                <Download className="w-4 h-4" />
+                <Download className="w-4 h-4" strokeWidth={2} />
                 Baixar Corte
               </button>
             )}

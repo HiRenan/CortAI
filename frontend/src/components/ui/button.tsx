@@ -17,11 +17,11 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const Comp = "button"
 
     const variants = {
-      default: "bg-blue-600 text-white hover:bg-blue-700 shadow-sm",
-      secondary: "bg-gray-100 text-gray-900 hover:bg-gray-200",
-      outline: "border border-gray-200 bg-white hover:bg-gray-100 hover:text-gray-900",
-      ghost: "hover:bg-gray-100 hover:text-gray-900",
-      destructive: "bg-red-500 text-white hover:bg-red-600 shadow-sm",
+      default: "bg-gradient-to-r from-indigo-600 to-teal-600 text-white hover:from-indigo-700 hover:to-teal-700 shadow-md hover:shadow-lg",
+      secondary: "bg-slate-100 text-slate-900 hover:bg-slate-200 border border-slate-200",
+      outline: "border border-slate-300 bg-white hover:bg-slate-50 hover:text-slate-900",
+      ghost: "hover:bg-slate-100 hover:text-slate-900",
+      destructive: "bg-red-500 text-white hover:bg-red-600 shadow-md",
     }
 
     const sizes = {

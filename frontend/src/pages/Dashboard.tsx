@@ -84,8 +84,8 @@ export function Dashboard() {
       <HeroSection />
 
       {/* Upload Form */}
-      <div className="bg-white rounded-xl shadow-md border-2 border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+      <div className="bg-white rounded-lg shadow-md border border-slate-200 p-6">
+        <h2 className="text-lg font-semibold text-slate-900 mb-4">
           Processar Novo Vídeo
         </h2>
 
@@ -101,9 +101,9 @@ export function Dashboard() {
                 }}
                 placeholder="https://youtube.com/watch?v=..."
                 className={`
-                  flex-1 px-4 py-3 rounded-lg border-2 transition-colors
-                  focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent
-                  ${urlError ? 'border-red-300 bg-red-50' : 'border-gray-300'}
+                  flex-1 px-4 py-3 rounded-lg border transition-all
+                  focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent
+                  ${urlError ? 'border-red-300 bg-red-50' : 'border-slate-300'}
                 `}
                 disabled={isSubmitting}
               />
@@ -111,36 +111,36 @@ export function Dashboard() {
                 type="submit"
                 disabled={isSubmitting || !url.trim()}
                 className="
-                  px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white
+                  px-6 py-3 bg-gradient-to-r from-indigo-600 to-teal-600 text-white
                   rounded-lg font-medium shadow-md hover:shadow-lg
-                  transition-all hover:from-purple-700 hover:to-blue-700
+                  transition-all hover:from-indigo-700 hover:to-teal-700
                   disabled:opacity-50 disabled:cursor-not-allowed
                   flex items-center gap-2
                 "
               >
-                <Send className="w-4 h-4" />
+                <Send className="w-4 h-4" strokeWidth={2} />
                 {isSubmitting ? 'Processando...' : 'Processar'}
               </button>
             </div>
 
             {urlError && (
               <div className="flex items-center gap-2 mt-2 text-sm text-red-600">
-                <AlertCircle className="w-4 h-4" />
+                <AlertCircle className="w-4 h-4" strokeWidth={2} />
                 <span>{urlError}</span>
               </div>
             )}
 
             {error && (
               <div className="flex items-center gap-2 mt-2 text-sm text-red-600">
-                <AlertCircle className="w-4 h-4" />
+                <AlertCircle className="w-4 h-4" strokeWidth={2} />
                 <span>{error}</span>
               </div>
             )}
           </div>
 
           {/* Max Highlights Selector */}
-          <div className="flex items-center gap-4">
-            <label htmlFor="maxHighlights" className="text-sm font-medium text-gray-700">
+          <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
+            <label htmlFor="maxHighlights" className="text-sm font-medium text-slate-700">
               Número de highlights:
             </label>
             <input
@@ -151,18 +151,19 @@ export function Dashboard() {
               value={maxHighlights}
               onChange={(e) => setMaxHighlights(Math.min(20, Math.max(1, parseInt(e.target.value) || 5)))}
               className="
-                w-20 px-3 py-2 rounded-lg border-2 border-gray-300
-                focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent
-                text-center font-medium
+                w-20 px-3 py-2 rounded-lg border border-slate-300
+                focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent
+                text-center font-semibold bg-white
               "
               disabled={isSubmitting}
             />
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-slate-500">
               (Recomendado: 3-10 para melhores resultados)
             </span>
           </div>
 
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-slate-500 flex items-center gap-2">
+            <span className="w-1.5 h-1.5 bg-teal-500 rounded-full"></span>
             Plataformas suportadas: YouTube, Twitch, Vimeo
           </p>
         </form>
@@ -177,15 +178,15 @@ export function Dashboard() {
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
           <div className="text-center">
-            <div className="w-12 h-12 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto" />
-            <p className="text-gray-600 mt-4">Carregando vídeos...</p>
+            <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto" />
+            <p className="text-slate-600 mt-4 font-medium">Carregando vídeos...</p>
           </div>
         </div>
       ) : videos.length === 0 ? (
         <EmptyState />
       ) : (
         <div className="space-y-4">
-          <h2 className="text-xl font-semibold text-gray-900">
+          <h2 className="text-xl font-semibold text-slate-900">
             Seus Vídeos ({videos.length})
           </h2>
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
