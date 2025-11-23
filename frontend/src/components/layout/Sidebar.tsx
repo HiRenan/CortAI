@@ -1,4 +1,4 @@
-import { Home, Settings, Library, LogOut, User } from "lucide-react"
+import { Home, Library, LogOut, User } from "lucide-react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { cn } from "../../lib/utils"
 import { useAuthStore } from "../../store/authStore"
@@ -7,7 +7,6 @@ import logoImg from "../../assets/logo.png"
 const navigation = [
   { name: "Dashboard", href: "/", icon: Home },
   { name: "Biblioteca", href: "/library", icon: Library },
-  { name: "Configurações", href: "/settings", icon: Settings },
 ]
 
 export function Sidebar() {
