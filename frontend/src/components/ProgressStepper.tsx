@@ -44,9 +44,9 @@ export function ProgressStepper({
   return (
     <div className="w-full space-y-4">
       {/* Barra de Progresso com Gradiente */}
-      <div className="relative h-2 bg-gray-200 rounded-full overflow-hidden">
+      <div className="relative h-2 bg-slate-200 rounded-full overflow-hidden">
         <div
-          className="absolute h-full bg-gradient-to-r from-purple-600 via-blue-500 to-cyan-400 transition-all duration-500 ease-out"
+          className="absolute h-full bg-gradient-to-r from-indigo-600 to-teal-500 transition-all duration-500 ease-out shadow-sm"
           style={{ width: `${percentage}%` }}
         />
       </div>
@@ -62,7 +62,7 @@ export function ProgressStepper({
               {index > 0 && (
                 <div
                   className={`absolute top-5 right-1/2 w-full h-0.5 -z-10 transition-colors duration-300 ${
-                    status === 'completed' ? 'bg-gradient-to-r from-purple-600 to-blue-500' : 'bg-gray-200'
+                    status === 'completed' ? 'bg-gradient-to-r from-indigo-500 to-teal-500' : 'bg-slate-200'
                   }`}
                   style={{ transform: 'translateX(50%)' }}
                 />
@@ -70,25 +70,25 @@ export function ProgressStepper({
 
               {/* Ícone do Step */}
               <div className={`
-                relative z-10 flex items-center justify-center w-12 h-12 rounded-full border-2
-                transition-all duration-300 shadow-lg
-                ${status === 'completed' && 'bg-green-500 border-green-500 shadow-green-200'}
-                ${status === 'active' && 'bg-purple-600 border-purple-600 shadow-purple-200'}
-                ${status === 'pending' && 'bg-white border-gray-300'}
+                relative z-10 flex items-center justify-center w-11 h-11 rounded-full border-2
+                transition-all duration-300 shadow-md
+                ${status === 'completed' && 'bg-teal-500 border-teal-500'}
+                ${status === 'active' && 'bg-indigo-600 border-indigo-600'}
+                ${status === 'pending' && 'bg-white border-slate-300'}
               `}>
-                {status === 'completed' && <CheckCircle2 className="w-6 h-6 text-white" />}
-                {status === 'active' && <Loader2 className="w-6 h-6 text-white animate-spin" />}
-                {status === 'pending' && <Circle className="w-6 h-6 text-gray-300" />}
+                {status === 'completed' && <CheckCircle2 className="w-5 h-5 text-white" strokeWidth={2.5} />}
+                {status === 'active' && <Loader2 className="w-5 h-5 text-white animate-spin" strokeWidth={2.5} />}
+                {status === 'pending' && <Circle className="w-5 h-5 text-slate-300" strokeWidth={2} />}
               </div>
 
               {/* Label e Descrição */}
               <div className="mt-3 text-center">
                 <p className={`text-sm font-semibold transition-colors ${
-                  status !== 'pending' ? 'text-gray-900' : 'text-gray-400'
+                  status !== 'pending' ? 'text-slate-900' : 'text-slate-400'
                 }`}>
                   {step.label}
                 </p>
-                <p className="text-xs text-gray-500 mt-0.5">{step.description}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{step.description}</p>
               </div>
             </div>
           )
@@ -97,9 +97,9 @@ export function ProgressStepper({
 
       {/* Mensagem Atual */}
       {message && (
-        <div className="flex items-center justify-center gap-2 py-2">
-          <div className="w-2 h-2 bg-purple-600 rounded-full animate-pulse" />
-          <p className="text-sm text-center text-purple-700 font-medium">
+        <div className="flex items-center justify-center gap-2 py-2 px-3 bg-indigo-50 rounded-lg border border-indigo-100">
+          <div className="w-2 h-2 bg-indigo-600 rounded-full animate-pulse" />
+          <p className="text-sm text-center text-indigo-700 font-medium">
             {message}
           </p>
         </div>

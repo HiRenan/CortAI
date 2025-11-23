@@ -72,6 +72,7 @@ migrations/versions/*.py
 *.swp
 .cursorrules
 CLAUDE.md 
+AGENTS.md
 .claude/
 *.swo
 *~

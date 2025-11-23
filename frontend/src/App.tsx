@@ -6,6 +6,7 @@ import { Library } from "./pages/Library"
 import { Login } from "./pages/Login"
 import { Register } from "./pages/Register"
 import { TestProgress } from "./pages/TestProgress"
+import { TestVideoCard } from "./pages/TestVideoCard"
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/test-progress" element={<TestProgress />} />
+        <Route path="/test-video-card" element={<TestVideoCard />} />
 
         {/* Protected routes (with sidebar) */}
         <Route element={<PrivateRoute />}>

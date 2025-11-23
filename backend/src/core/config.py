@@ -50,6 +50,21 @@ JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-jwt-secret-key-change-in-prod
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
+# CORS configuration
+def get_cors_origins() -> list[str]:
+    """
+    Return allowed CORS origins from env var CORS_ORIGINS or a local default.
+    """
+    raw = os.getenv("CORS_ORIGINS", "")
+    if not raw:
+        return [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ]
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
 # Validate critical environment variables
 if not GOOGLE_API_KEY:
     raise ValueError("ERRO: variável GOOGLE_API_KEY não encontrada no .env!")

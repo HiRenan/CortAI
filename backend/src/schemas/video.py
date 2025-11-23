@@ -12,6 +12,12 @@ class VideoCreate(BaseModel):
     url: str = Field(
         description="URL of the video to process (YouTube, Twitch, etc.)"
     )
+    max_highlights: Optional[int] = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Maximum number of highlights to generate (1-20, default: 5)"
+    )
 
 
 class VideoResponse(BaseModel):

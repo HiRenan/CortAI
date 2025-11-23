@@ -4,7 +4,6 @@ import { useAuthStore } from '../store/authStore'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
-import mascoteImg from '../assets/mascote.png'
 
 export function Register() {
   const navigate = useNavigate()
@@ -96,25 +95,29 @@ export function Register() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-emerald-100 px-4 py-8">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1 text-center">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-50 via-slate-50 to-indigo-50 px-4 py-8">
+      <Card className="w-full max-w-md shadow-xl">
+        <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <img src={mascoteImg} alt="CortAI Mascote" className="h-20" />
+            <div className="w-20 h-20 rounded-xl bg-gradient-to-br from-teal-600 to-indigo-600 flex items-center justify-center shadow-lg">
+              <span className="text-3xl font-bold text-white">CA</span>
+            </div>
           </div>
-          <CardTitle className="text-2xl font-bold">Criar conta</CardTitle>
-          <CardDescription>Preencha seus dados para começar</CardDescription>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">
+            Criar conta
+          </h2>
+          <p className="text-sm text-slate-600">Preencha seus dados para começar</p>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
-              <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
+              <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg">
                 {error}
               </div>
             )}
 
             <div className="space-y-2">
-              <label htmlFor="name" className="text-sm font-medium text-gray-700">
+              <label htmlFor="name" className="text-sm font-medium text-slate-700">
                 Nome completo
               </label>
               <Input
@@ -132,7 +135,7 @@ export function Register() {
             </div>
 
             <div className="space-y-2">
-              <label htmlFor="email" className="text-sm font-medium text-gray-700">
+              <label htmlFor="email" className="text-sm font-medium text-slate-700">
                 Email
               </label>
               <Input
@@ -150,7 +153,7 @@ export function Register() {
             </div>
 
             <div className="space-y-2">
-              <label htmlFor="password" className="text-sm font-medium text-gray-700">
+              <label htmlFor="password" className="text-sm font-medium text-slate-700">
                 Senha
               </label>
               <Input
@@ -168,7 +171,7 @@ export function Register() {
             </div>
 
             <div className="space-y-2">
-              <label htmlFor="confirmPassword" className="text-sm font-medium text-gray-700">
+              <label htmlFor="confirmPassword" className="text-sm font-medium text-slate-700">
                 Confirmar senha
               </label>
               <Input
@@ -191,8 +194,8 @@ export function Register() {
           </form>
 
           <div className="mt-6 text-center text-sm">
-            <span className="text-gray-600">Já tem uma conta? </span>
-            <Link to="/login" className="text-green-600 hover:text-green-700 font-medium">
+            <span className="text-slate-600">Já tem uma conta? </span>
+            <Link to="/login" className="text-teal-600 hover:text-teal-700 font-semibold transition-colors">
               Entrar
             </Link>
           </div>

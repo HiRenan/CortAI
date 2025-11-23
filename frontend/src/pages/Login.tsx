@@ -4,7 +4,6 @@ import { useAuthStore } from '../store/authStore'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
-import logoImg from '../assets/logo.png'
 
 export function Login() {
   const navigate = useNavigate()
@@ -77,25 +76,29 @@ export function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1 text-center">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 via-slate-50 to-teal-50 px-4">
+      <Card className="w-full max-w-md shadow-xl">
+        <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <img src={logoImg} alt="CortAI Logo" className="h-16" />
+            <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-indigo-600 to-teal-600 flex items-center justify-center shadow-lg">
+              <span className="text-2xl font-bold text-white">CA</span>
+            </div>
           </div>
-          <CardTitle className="text-2xl font-bold">Bem-vindo de volta</CardTitle>
-          <CardDescription>Entre com sua conta para continuar</CardDescription>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">
+            Bem-vindo de volta
+          </h2>
+          <p className="text-sm text-slate-600">Entre com sua conta para continuar</p>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
-              <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
+              <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg">
                 {error}
               </div>
             )}
 
             <div className="space-y-2">
-              <label htmlFor="email" className="text-sm font-medium text-gray-700">
+              <label htmlFor="email" className="text-sm font-medium text-slate-700">
                 Email
               </label>
               <Input
@@ -113,7 +116,7 @@ export function Login() {
             </div>
 
             <div className="space-y-2">
-              <label htmlFor="password" className="text-sm font-medium text-gray-700">
+              <label htmlFor="password" className="text-sm font-medium text-slate-700">
                 Senha
               </label>
               <Input
@@ -136,8 +139,8 @@ export function Login() {
           </form>
 
           <div className="mt-6 text-center text-sm">
-            <span className="text-gray-600">Não tem uma conta? </span>
-            <Link to="/register" className="text-blue-600 hover:text-blue-700 font-medium">
+            <span className="text-slate-600">Não tem uma conta? </span>
+            <Link to="/register" className="text-indigo-600 hover:text-indigo-700 font-semibold transition-colors">
               Cadastre-se
             </Link>
           </div>
