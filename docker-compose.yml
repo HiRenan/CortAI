@@ -64,11 +64,13 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: cortai-backend
+    stdin_open: true # docker run -i
+    tty: true        # docker run -t
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
-      - ./storage:/app/storage
+      # ./storage:/app/storage
       - ./backend/data:/app/data
     environment:
       - DATABASE_URL=postgresql+asyncpg://cortai:cortai_password@postgres:5432/cortai
@@ -184,6 +186,30 @@ services:
     networks:
       - cortai-network
     command: python -m src.workers.editor_worker
+
+  # Collector Worker (RabbitMQ)
+  collector-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cortai-collector
+    volumes:
+      - ./backend:/app
+      - ./storage:/app/storage
+      - ./backend/data:/app/data
+    environment:
+      - DATABASE_URL=postgresql://cortai:cortai_password@postgres:5432/cortai
+      - REDIS_URL=redis://redis:6379/0
+      - RABBITMQ_URL=amqp://cortai:cortai_password@rabbitmq:5672/
+      - FFMPEG_PATH=ffmpeg
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    depends_on:
+      - redis
+      - postgres
+      - rabbitmq
+    networks:
+      - cortai-network
+    command: python -m src.workers.collector_worker
 
   # Frontend
   frontend:
